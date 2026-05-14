@@ -1,16 +1,16 @@
-# 🤖 Claude AI Discord Bot — Agent Polyvalent
+# 🤖 A2K Bot Discord — Agent Polyvalent (Groq)
 
-Un bot Discord ultra-puissant propulsé par **Claude (Anthropic)**, capable de coder, déboguer, traduire, planifier, analyser des images et bien plus encore.
+Un bot Discord ultra-rapide et performant propulsé par **Groq** et **Llama 3.3 70B**. Il est capable de coder, déboguer, traduire, planifier, lire des fichiers et bien plus encore, avec une interface moderne et 100% asynchrone !
 
 ---
 
-## ✨ Fonctionnalités
+## ✨ Fonctionnalités Principales
 
 | Commande | Description |
 |---|---|
-| `/ask` | Poser n'importe quelle question |
+| `/ask` | Poser n'importe quelle question (fichiers texte/code supportés) |
 | `/code` | Générer du code dans n'importe quel langage |
-| `/debug` | Déboguer un code avec son erreur |
+| `/debug` | Déboguer un script avec son message d'erreur |
 | `/expliquer` | Expliquer un bloc de code ligne par ligne |
 | `/traduire` | Traduire dans n'importe quelle langue |
 | `/resume` | Résumer un texte long en points clés |
@@ -18,124 +18,46 @@ Un bot Discord ultra-puissant propulsé par **Claude (Anthropic)**, capable de c
 | `/plan` | Créer un plan de projet professionnel |
 | `/math` | Résoudre des problèmes mathématiques |
 | `/corriger` | Corriger et améliorer un texte |
-| `/info` | Afficher l'aide du bot |
-| `/clear` | Effacer l'historique de conversation |
-| `@mention` | Parler directement + analyser des images |
+| `/clear` | Effacer l'historique de conversation du salon |
+| `@mention` | Discuter directement avec le bot (fichiers supportés) |
+
+### 🌟 Fonctionnalités Premium (Incluses)
+- **100% Asynchrone :** Gère des dizaines de requêtes simultanées sans jamais bloquer.
+- **Mémoire de Salon :** Le contexte est sauvegardé par salon/thread, idéal pour collaborer à plusieurs !
+- **Lecture de Fichiers :** Glissez un fichier `.py`, `.js`, `.txt`, etc. dans le chat et demandez au bot de l'analyser.
+- **Interface Embeds :** Réponses magnifiquement formatées et colorées (Pagination automatique).
+- **Bouton Interactif :** Corbeille 🗑️ sous chaque message pour nettoyer le salon (réservée à l'auteur de la commande).
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Lancement
 
 ### Étape 1 — Prérequis
 - Python 3.10+ installé
-- Un compte Discord (gratuit)
-- Une clé API Anthropic (https://console.anthropic.com)
+- Un compte Discord Developer
+- Une clé API Groq (Gratuite sur [console.groq.com](https://console.groq.com/))
 
-### Étape 2 — Créer le bot Discord
+### Étape 2 — Configuration
+1. Clonez ce dépôt.
+2. Installez les dépendances :
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Créez un fichier `.env` à la racine (basé sur `.env.example`) :
+   ```env
+   DISCORD_TOKEN=votre_token_discord
+   GROQ_API_KEY=gsk_votre_cle_groq
+   BOT_NAME=MonBot
+   MAX_HISTORY=50
+   ```
 
-1. Va sur https://discord.com/developers/applications
-2. Clique **"New Application"** → donne un nom
-3. Va dans **"Bot"** → clique **"Add Bot"**
-4. Copie le **Token** du bot
-5. Active les **Intents** : `MESSAGE CONTENT`, `SERVER MEMBERS`
-6. Va dans **"OAuth2 > URL Generator"** :
-   - Coche `bot` et `applications.commands`
-   - Permissions : `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files`
-7. Copie l'URL générée → ouvre-la dans ton navigateur → invite le bot sur ton serveur
-
-### Étape 3 — Configurer le projet
-
-```bash
-# Cloner / télécharger le projet
-cd discord-bot
-
-# Installer les dépendances
-pip install -r requirements.txt
-
-# Créer le fichier de config
-cp .env.example .env
-```
-
-Ouvre `.env` et remplis :
-```env
-DISCORD_TOKEN=ton_token_discord
-ANTHROPIC_API_KEY=sk-ant-ta_clé_anthropic
-```
-
-### Étape 4 — Lancer le bot
-
+### Étape 3 — Lancer le bot
 ```bash
 python main.py
 ```
 
-Tu verras :
-```
-╔══════════════════════════════════════════╗
-║  ✅ ClaudeBot est en ligne !
-║  🤖 Modèle : claude-sonnet-4-20250514
-║  📋 Serveurs : 1
-╚══════════════════════════════════════════╝
-```
-
 ---
 
-## 🧠 Système de mémoire
-
-Le bot garde en mémoire les **20 derniers échanges** par utilisateur. Cela lui permet de maintenir le contexte d'une conversation. Utilise `/clear` pour repartir de zéro.
-
----
-
-## 🖼️ Analyse d'images
-
-Pour analyser une image :
-1. Mentionne le bot : `@ClaudeBot`
-2. Joins une image en pièce jointe
-3. Pose ta question sur l'image (optionnel)
-
----
-
-## 🌐 Hébergement en ligne (24h/24)
-
-Pour que le bot tourne en permanence :
-
-### Option gratuite — Railway
-```bash
-# 1. Crée un compte sur railway.app
-# 2. Nouveau projet → "Deploy from GitHub"
-# 3. Pousse ton code sur GitHub
-# 4. Ajoute les variables d'environnement dans Railway
-# 5. Déploie !
-```
-
-### Option gratuite — Render
-```bash
-# 1. Crée un compte sur render.com
-# 2. Nouveau "Web Service" → connecte GitHub
-# 3. Start Command : python main.py
-# 4. Ajoute les variables d'environnement
-```
-
-### Option locale permanente (Windows)
-```bash
-# Créer une tâche planifiée ou utiliser pm2 avec Node.js
-npm install -g pm2
-pm2 start main.py --interpreter python3
-pm2 save
-pm2 startup
-```
-
----
-
-## 🔧 Personnalisation
-
-Dans `main.py`, tu peux modifier :
-- `SYSTEM_PROMPT` : changer la personnalité du bot
-- `MAX_HISTORY` : ajuster la taille de la mémoire
-- `MAX_TOKENS` : ajuster la longueur des réponses
-- Ajouter tes propres commandes en suivant le même pattern
-
----
-
-## 📄 Licence
-
-Projet personnel — libre d'utilisation et de modification.
+## 📄 À propos
+Projet développé et optimisé pour la rapidité extrême de Groq (Llama 3). 
+Libre d'utilisation et de modification.
