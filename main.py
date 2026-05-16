@@ -26,7 +26,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_NAME      = os.getenv("BOT_NAME", "MonBot")
 MAX_HISTORY   = int(os.getenv("MAX_HISTORY", 20))
-MODEL_NAME    = "gemini-2.5-flash-lite"   # Modèle version "lite" avec un énorme quota gratuit
+MODEL_NAME    = "gemini-2.5-flash"   # Modèle sans limite de quota atteinte
 
 # ── WhatsApp (Green API) ───────────────────────────────────────
 WA_ID_INSTANCE = os.getenv("WA_ID_INSTANCE")
@@ -74,6 +74,13 @@ cursor.execute('''
     CREATE TABLE IF NOT EXISTS wa_settings (
         phone TEXT PRIMARY KEY,
         ai_paused BOOLEAN DEFAULT 0
+    )
+''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS wa_followups (
+        phone TEXT PRIMARY KEY,
+        last_bot_msg DATETIME,
+        status TEXT DEFAULT 'pending'
     )
 ''')
 conn.commit()
@@ -130,6 +137,7 @@ RÈGLES STRICTES :
 6. Si le client semble très intéressé, prêt à passer commande, ou s'il demande formellement à parler à un humain/Dieylany, tu DOIS OBLIGATOIREMENT ajouter ce code secret tout à la fin de ta réponse : [ALERTE_PROSPECT]. Ce code me permettra de déclencher une alarme. Ne le mets pas pour les questions banales.
 7. IMPORTANT : Si le client veut acheter un service (ex: payer 50000 FCFA), confirme d'abord avec lui. S'il est prêt à payer, insère EXACTEMENT la balise [LIEN_PAIEMENT_X] (où X est le prix en chiffres sans espaces, ex: [LIEN_PAIEMENT_50000]) à la fin de ta réponse. Dis-lui qu'un lien sécurisé (Wave/Orange Money) vient d'être généré ci-dessous.
 8. IMPORTANT : Si le client veut prendre un rendez-vous (appel téléphonique, visio, etc.), propose-lui d'utiliser notre agenda. S'il est d'accord, insère EXACTEMENT la balise [LIEN_CALENDRIER] à la fin de ta réponse.
+9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
 """
 
 model = genai.GenerativeModel(
@@ -360,6 +368,14 @@ async def poll_whatsapp_messages():
                         
                         # Ajouter le message utilisateur à la mémoire AVANT la vérification de pause
                         add_to_wa_memory(phone, "user", text)
+                        
+                        # Mettre à jour le statut de relance (le client a répondu)
+                        cursor.execute("""
+                            INSERT INTO wa_followups (phone, status) 
+                            VALUES (?, 'replied')
+                            ON CONFLICT(phone) DO UPDATE SET status = 'replied'
+                        """, (phone,))
+                        conn.commit()
 
                         # Vérifier si l'IA est en pause pour ce client
                         cursor.execute("SELECT ai_paused FROM wa_settings WHERE phone = ?", (phone,))
@@ -370,6 +386,21 @@ async def poll_whatsapp_messages():
                         else:
                             # Générer réponse IA (ask_gemini_wa ne doit plus ajouter le user_message puisqu'on l'a déjà fait)
                             reply = await ask_gemini_wa(phone, "", media_part)
+                            
+                            # Détection de fin de discussion
+                            is_finished = False
+                            if "[FIN_DISCUSSION]" in reply:
+                                is_finished = True
+                                reply = reply.replace("[FIN_DISCUSSION]", "").strip()
+                                
+                            # Enregistrer le statut de relance pour ce client
+                            new_status = 'finished' if is_finished else 'pending'
+                            cursor.execute("""
+                                INSERT INTO wa_followups (phone, last_bot_msg, status) 
+                                VALUES (?, CURRENT_TIMESTAMP, ?)
+                                ON CONFLICT(phone) DO UPDATE SET last_bot_msg = CURRENT_TIMESTAMP, status = ?
+                            """, (phone, new_status, new_status))
+                            conn.commit()
                             
                             # Détection prospect chaud
                             is_hot = False
@@ -470,6 +501,51 @@ async def generate_and_send_report():
 async def cmd_wa_rapport(interaction: discord.Interaction):
     await interaction.response.send_message("📊 Génération du rapport en cours... Vérifie ton WhatsApp !", ephemeral=True)
     await generate_and_send_report()
+
+async def check_and_send_followups():
+    """Vérifie toutes les 30 minutes s'il faut relancer des clients après 48h de silence."""
+    try:
+        # Chercher ceux en 'pending' dont le dernier message du bot date de > 48h
+        cursor.execute("""
+            SELECT phone FROM wa_followups 
+            WHERE status = 'pending' 
+            AND last_bot_msg <= datetime('now', '-48 hours')
+        """)
+        rows = cursor.fetchall()
+        for r in rows:
+            phone = r[0]
+            
+            # Récupérer l'historique pour donner du contexte à l'IA
+            history = get_wa_memory(phone, limit=5)
+            prompt = f"Tu es Max, l'assistant de {BUSINESS_NAME}. Le prospect au numéro {phone} n'a pas répondu à ton dernier message depuis 48h. Voici les derniers échanges :\n"
+            for msg in history:
+                prompt += f"{'Client' if msg['role'] == 'user' else 'Max'}: {msg['content']}\n"
+            prompt += "\nObjectif : Rédige un SEUL petit message WhatsApp très court et ultra-naturel (1 à 2 phrases max) pour le relancer en douceur, montrer qu'on est disponible et ré-engager la conversation. Ne donne pas l'impression d'être un robot."
+            
+            response = await wa_model.generate_content_async(prompt)
+            followup_msg = response.text.strip()
+            
+            # Marquer comme relancé pour ne plus le spammer
+            cursor.execute("UPDATE wa_followups SET status = 'followed_up', last_bot_msg = CURRENT_TIMESTAMP WHERE phone = ?", (phone,))
+            conn.commit()
+            
+            # Envoyer le message
+            await send_whatsapp(phone, followup_msg)
+            add_to_wa_memory(phone, "assistant", followup_msg)
+            
+            # Notifier l'admin
+            if WA_LOG_CHANNEL:
+                channel = bot.get_channel(WA_LOG_CHANNEL)
+                if channel:
+                    await channel.send(f"⏰ **Drip Marketing (Automatique)** : Max vient de relancer `+{phone}` après 48h de silence !\n*Message envoyé :* {followup_msg}")
+                    
+    except Exception as e:
+        print(f"⚠️ Erreur lors des relances automatiques : {e}")
+
+@bot.tree.command(name="wa_force_relance", description="[Admin] Force la vérification immédiate des relances Drip Marketing")
+async def cmd_wa_force_relance(interaction: discord.Interaction):
+    await interaction.response.send_message("🔍 Lancement de la routine de relance en arrière-plan...", ephemeral=True)
+    await check_and_send_followups()
 
 async def execute_planned_message(numeros: list, message: str, label: str):
     """Exécute un envoi programmé."""
@@ -904,6 +980,14 @@ async def on_ready():
             hour=18,
             minute=0,
             id="weekly_report"
+        )
+        
+        # Planifier les relances (vérifie toutes les 30 minutes)
+        scheduler.add_job(
+            check_and_send_followups,
+            "interval",
+            minutes=30,
+            id="drip_marketing"
         )
         
         scheduler.start()
