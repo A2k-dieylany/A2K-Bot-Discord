@@ -379,16 +379,15 @@ async def generate_voice(text: str) -> bytes:
     return audio_data
 
 async def send_whatsapp_voice(phone: str, file_bytes: bytes):
-    """Envoie un fichier audio en tant que NOTE VOCALE sur WhatsApp."""
+    """Envoie un fichier audio (MP3) sur WhatsApp."""
     phone = str(phone).replace("+", "").replace(" ", "").replace("-", "")
     chat_id = f"{phone}@c.us"
     url = f"https://api.green-api.com/waInstance{WA_ID_INSTANCE}/sendFileByUpload/{WA_API_TOKEN}"
     
     form = aiohttp.FormData()
     form.add_field('chatId', chat_id)
-    form.add_field('fileName', 'voice_message.ogg')
-    # Pour qu'il s'affiche comme un vrai vocal (PTT), on utilise audio/ogg
-    form.add_field('file', file_bytes, filename='voice_message.ogg', content_type='audio/ogg')
+    form.add_field('fileName', 'voice_message.mp3')
+    form.add_field('file', file_bytes, filename='voice_message.mp3', content_type='audio/mpeg')
     
     async with aiohttp.ClientSession() as session:
         async with session.post(url, data=form) as resp:
@@ -684,10 +683,11 @@ async def poll_whatsapp_messages():
                             reply = await ask_gemini_wa(phone, "", media_part)
                             
                             # Détection de fin de discussion
+                            import re
                             is_finished = False
-                            if "[FIN_DISCUSSION]" in reply:
+                            if re.search(r'\[(?i)FIN_DISCUSSION\]', reply):
                                 is_finished = True
-                                reply = reply.replace("[FIN_DISCUSSION]", "").strip()
+                                reply = re.sub(r'\[(?i)FIN_DISCUSSION\]', '', reply).strip()
                                 
                             # Enregistrer le statut de relance pour ce client
                             new_status = 'finished' if is_finished else 'pending'
@@ -764,9 +764,9 @@ async def poll_whatsapp_messages():
 
                             # Interception de la balise VOCAL
                             is_vocal = False
-                            if "[VOCAL]" in reply:
+                            if re.search(r'\[(?i)VOCAL\]', reply):
                                 is_vocal = True
-                                reply = reply.replace("[VOCAL]", "").strip()
+                                reply = re.sub(r'\[(?i)VOCAL\]', '', reply).strip()
 
                             # Délai artificiel pour humaniser Max (simule le temps de frappe)
                             delay = max(2.0, min(6.0, len(reply) * 0.04))
