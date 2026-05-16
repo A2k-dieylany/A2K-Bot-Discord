@@ -36,8 +36,8 @@ WA_API_TOKEN   = os.getenv("WA_API_TOKEN")
 WA_LOG_CHANNEL = int(os.getenv("WA_LOG_CHANNEL", "0"))
 
 # ── Informations Business ──────────────────────────────────────
-BUSINESS_NAME  = os.getenv("BUSINESS_NAME", "notre entreprise")
-BUSINESS_INFO  = os.getenv("BUSINESS_INFO", "Nous proposons des services de qualité.")
+BUSINESS_NAME="Sen Digital Solution"
+BUSINESS_INFO="Sen Digital Solution (SDS) est une agence experte en automatisation d'entreprises, intégration d'Intelligence Artificielle et développement d'écosystèmes web sur-mesure."
 ADMIN_PHONE    = os.getenv("ADMIN_PHONE")
 
 # ── Base de Connaissances (Le Cerveau) ─────────────────────────

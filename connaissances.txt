@@ -1,24 +1,25 @@
-=== OFFRES ET SERVICES ===
-1. Création de sites web vitrines : À partir de 50000 FCFA. Idéal pour les artisans, agences et PME. Délai : 2 semaines.
-2. Création de sites e-commerce : À partir de 150000 FCFA. Inclut le paiement en ligne (Orange Money, Wave, Carte bancaire). Délai : 4 semaines.
-3. Bots IA WhatsApp / Discord / Telegram : À partir de 50000 FCFA. Pour automatiser le SAV et augmenter les ventes. Délai : 1 semaine.
+=== QUI SOMMES-NOUS ? ===
+Sen Digital Solution (SDS) est le partenaire stratégique des entreprises modernes. Notre mission principale est de décupler votre croissance et de réduire votre charge de travail grâce à l'automatisation avancée et l'intégration de l'Intelligence Artificielle.
 
-=== PROCESSUS DE TRAVAIL ===
-- Étape 1 : Appel découverte gratuit pour bien comprendre le besoin.
-- Étape 2 : Envoi du devis et signature.
-- Étape 3 : Paiement d'un acompte de 50% pour démarrer le projet.
-- Étape 4 : Développement et validations intermédiaires.
-- Étape 5 : Livraison finale, formation du client, puis paiement des 50% restants.
+=== NOTRE CŒUR D'EXPERTISE : L'IA & L'AUTOMATISATION ===
+1. Automatisation WhatsApp Business & CRM IA : Fini les pertes de temps. Nous déployons des agents IA qui répondent à vos clients 24h/24, qualifient les prospects, encaissent les paiements et prennent vos rendez-vous automatiquement.
+2. Intégration IA & Agents Autonomes : Nous transformons vos processus internes en connectant l'Intelligence Artificielle à vos outils quotidiens pour une productivité décuplée.
 
-=== INFORMATIONS GÉNÉRALES ===
-- Équipe : Des développeurs seniors et designers expérimentés.
-- Hébergement et Nom de domaine : Offerts la première année pour les sites web.
-- Maintenance : 3 mois de maintenance gratuite après la livraison.
-- Moyens de paiement acceptés : Wave, Orange Money, Virement bancaire, PayPal.
+=== NOS AUTRES SERVICES DIGITAUX ===
+3. Développement Web & SaaS : Création de sites web vitrines premium, de plateformes e-commerce et de tableaux de bord sur-mesure (Dark mode, ultra-rapides, SEO optimisés).
+4. Conception d'affiches & Logos : Branding de haute qualité pour donner une identité forte et professionnelle à votre entreprise.
+5. Formation & Coaching : Nous formons vos équipes à l'utilisation des nouveaux outils digitaux et de l'IA pour vous rendre autonomes.
+6. Vente d'Outils Digitaux : Mise à disposition de logiciels, templates et solutions prêtes à l'emploi pour accélérer votre transition numérique.
+... et bien plus encore ! N'hésitez pas à demander.
 
-=== FAQ (Foire Aux Questions) ===
-Q : Est-ce que le devis est gratuit ?
-R : Oui, le devis et le premier appel d'analyse sont 100% gratuits.
+=== PROCESSUS D'ACCOMPAGNEMENT (MÉTHODE SDS) ===
+- Étape 1 : Appel Stratégique (Gratuit) pour auditer vos besoins en automatisation.
+- Étape 2 : Proposition d'une architecture sur-mesure (Devis & Roadmap).
+- Étape 3 : Acompte de 50% au démarrage.
+- Étape 4 : Développement, intégration et tests.
+- Étape 5 : Déploiement final, formation de votre équipe, et paiement du solde de 50%.
 
-Q : Où êtes-vous situés ?
-R : Nous travaillons à distance avec des clients du monde entier, mais nous sommes basés au Sénégal.
+=== LA PROMESSE SDS ===
+- Gain de Temps : L'IA fait le travail répétitif à votre place.
+- Augmentation des Ventes : Un bot qui répond instantanément 24/7 capture 3x plus de prospects.
+- Support Local & International : Basés au Sénégal, nous accompagnons les entreprises partout dans le monde avec les solutions de paiement locales (Wave, Orange Money) et internationales.
