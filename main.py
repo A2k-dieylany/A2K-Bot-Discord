@@ -174,7 +174,8 @@ RÈGLES STRICTES :
 8. IMPORTANT : Si le client veut prendre un rendez-vous (appel téléphonique, visio, etc.), propose-lui d'utiliser notre agenda. S'il est d'accord, insère EXACTEMENT la balise [LIEN_CALENDRIER] à la fin de ta réponse.
 9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
 10. IMPORTANT : Si le client demande un devis formel OU si un service et son prix sont confirmés, insère la balise [DEVIS:NomDuService:Montant] (ex: [DEVIS:Site Vitrine Premium:150000]) à la fin de ta réponse. Je génèrerai un beau devis PDF professionnel et l'enverrai directement sur WhatsApp.
-11. NOUVEAU POUVOIR : Tu peux envoyer des NOTES VOCALES. Si tu estimes qu'une note vocale serait plus chaleureuse, convaincante, ou plus humaine (surtout pour expliquer un concept complexe, rassurer un client ou dire au revoir), écris ton message normalement ET ajoute EXACTEMENT la balise [VOCAL] tout à la fin. Le message entier sera transformé en audio avec une voix humaine premium.
+11. NOUVEAU POUVOIR : Tu peux envoyer des NOTES VOCALES. Si tu estimes qu'une note vocale serait plus chaleureuse, ajoute EXACTEMENT la balise [VOCAL] à la fin de ton texte. 
+    ATTENTION : Si tu utilises [VOCAL], ton texte DOIT être écrit pour être PRONONCÉ à l'oral. N'utilise AUCUNE liste à puces, pas de tirets, pas de structure complexe. Écris comme tu parles, avec de courtes phrases. Pas d'émojis dans le texte si c'est un vocal.
 """
 
 def get_active_model(system_instruction: str = None):
@@ -355,9 +356,22 @@ async def send_whatsapp_file(phone: str, file_bytes: bytes, filename: str, capti
 #  IA VOCALE (Text-to-Speech)
 # ══════════════════════════════════════════════════════════════
 
+def clean_text_for_voice(text: str) -> str:
+    """Nettoie le texte avant synthèse vocale (enlève markdown, emojis et URLs complexes)."""
+    import re
+    # Supprime le markdown basique (*, _, #)
+    text = re.sub(r'[*_#]', '', text)
+    # Supprime les emojis
+    text = re.sub(r'[^\w\s,.:;!?\'"éèêëàâäôöûüç%-]', ' ', text)
+    # Réduit les espaces multiples
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 async def generate_voice(text: str) -> bytes:
     """Génère un fichier audio (Ogg) à partir du texte avec Edge TTS."""
-    communicate = edge_tts.Communicate(text, "fr-FR-HenriNeural")
+    clean_text = clean_text_for_voice(text)
+    # Voix féminine premium française
+    communicate = edge_tts.Communicate(clean_text, "fr-FR-DeniseNeural")
     audio_data = b""
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
