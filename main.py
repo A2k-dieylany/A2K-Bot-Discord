@@ -16,6 +16,7 @@ import aiohttp
 from aiohttp import web
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import edge_tts
 from datetime import datetime
 import sqlite3
 import io
@@ -173,6 +174,7 @@ RÈGLES STRICTES :
 8. IMPORTANT : Si le client veut prendre un rendez-vous (appel téléphonique, visio, etc.), propose-lui d'utiliser notre agenda. S'il est d'accord, insère EXACTEMENT la balise [LIEN_CALENDRIER] à la fin de ta réponse.
 9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
 10. IMPORTANT : Si le client demande un devis formel OU si un service et son prix sont confirmés, insère la balise [DEVIS:NomDuService:Montant] (ex: [DEVIS:Site Vitrine Premium:150000]) à la fin de ta réponse. Je génèrerai un beau devis PDF professionnel et l'enverrai directement sur WhatsApp.
+11. NOUVEAU POUVOIR : Tu peux envoyer des NOTES VOCALES. Si tu estimes qu'une note vocale serait plus chaleureuse, convaincante, ou plus humaine (surtout pour expliquer un concept complexe, rassurer un client ou dire au revoir), écris ton message normalement ET ajoute EXACTEMENT la balise [VOCAL] tout à la fin. Le message entier sera transformé en audio avec une voix humaine premium.
 """
 
 def get_active_model(system_instruction: str = None):
@@ -347,6 +349,37 @@ async def send_whatsapp_file(phone: str, file_bytes: bytes, filename: str, capti
         async with session.post(url, data=form) as resp:
             result = await resp.json()
             print(f"📎 Envoi fichier WA → {phone} | Statut: {resp.status} | {result}")
+            return result
+
+# ══════════════════════════════════════════════════════════════
+#  IA VOCALE (Text-to-Speech)
+# ══════════════════════════════════════════════════════════════
+
+async def generate_voice(text: str) -> bytes:
+    """Génère un fichier audio (Ogg) à partir du texte avec Edge TTS."""
+    communicate = edge_tts.Communicate(text, "fr-FR-HenriNeural")
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return audio_data
+
+async def send_whatsapp_voice(phone: str, file_bytes: bytes):
+    """Envoie un fichier audio en tant que NOTE VOCALE sur WhatsApp."""
+    phone = str(phone).replace("+", "").replace(" ", "").replace("-", "")
+    chat_id = f"{phone}@c.us"
+    url = f"https://api.green-api.com/waInstance{WA_ID_INSTANCE}/sendFileByUpload/{WA_API_TOKEN}"
+    
+    form = aiohttp.FormData()
+    form.add_field('chatId', chat_id)
+    form.add_field('fileName', 'voice_message.ogg')
+    # Pour qu'il s'affiche comme un vrai vocal (PTT), on utilise audio/ogg
+    form.add_field('file', file_bytes, filename='voice_message.ogg', content_type='audio/ogg')
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=form) as resp:
+            result = await resp.json()
+            print(f"🎙️ Envoi vocal WA → {phone} | Statut: {resp.status} | {result}")
             return result
 
 async def gemini_generate(prompt_or_contents, system_instruction: str = None, is_wa: bool = False) -> str:
@@ -715,12 +748,27 @@ async def poll_whatsapp_messages():
                                 except Exception as pdf_err:
                                     print(f"⚠️ Erreur génération PDF : {pdf_err}")
 
+                            # Interception de la balise VOCAL
+                            is_vocal = False
+                            if "[VOCAL]" in reply:
+                                is_vocal = True
+                                reply = reply.replace("[VOCAL]", "").strip()
+
                             # Délai artificiel pour humaniser Max (simule le temps de frappe)
                             delay = max(2.0, min(6.0, len(reply) * 0.04))
                             await asyncio.sleep(delay)
                             
                             # Envoyer la réponse sur WhatsApp
-                            await send_whatsapp(phone, reply)
+                            if is_vocal and reply:
+                                try:
+                                    print("🎙️ Génération de la note vocale en cours...")
+                                    audio_bytes = await generate_voice(reply)
+                                    await send_whatsapp_voice(phone, audio_bytes)
+                                except Exception as e:
+                                    print(f"⚠️ Erreur génération/envoi vocal : {e}")
+                                    await send_whatsapp(phone, reply) # Fallback en texte
+                            elif reply:
+                                await send_whatsapp(phone, reply)
                             
                             # Logger sur Discord
                             if WA_LOG_CHANNEL:
