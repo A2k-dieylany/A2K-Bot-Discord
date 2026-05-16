@@ -26,6 +26,13 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+import re
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials as GCredentials
+    GSPREAD_AVAILABLE = True
+except ImportError:
+    GSPREAD_AVAILABLE = False
 
 # ── Configuration ──────────────────────────────────────────────
 load_dotenv()
@@ -54,6 +61,18 @@ WA_LOG_CHANNEL = int(os.getenv("WA_LOG_CHANNEL", "0"))
 BUSINESS_NAME="Sen Digital Solution"
 BUSINESS_INFO="Sen Digital Solution (SDS) est une agence experte en automatisation d'entreprises, intégration d'Intelligence Artificielle et développement d'écosystèmes web sur-mesure."
 ADMIN_PHONE    = os.getenv("ADMIN_PHONE")
+
+# ── Google Sheets CRM ──────────────────────────────────────────
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
+gc = None
+if GSPREAD_AVAILABLE and os.path.exists("google_credentials.json"):
+    try:
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        credentials = GCredentials.from_service_account_file('google_credentials.json', scopes=scopes)
+        gc = gspread.authorize(credentials)
+        print("✅ Google Sheets CRM connecté avec succès !")
+    except Exception as e:
+        print(f"⚠️ Erreur de connexion à Google Sheets : {e}")
 
 # ── Base de Connaissances (Le Cerveau) ─────────────────────────
 try:
@@ -454,6 +473,42 @@ async def send_embed_reply(interaction: discord.Interaction, title: str, text: s
 # ══════════════════════════════════════════════════════════════
 #  WHATSAPP — Fonctions de base et SAV
 # ══════════════════════════════════════════════════════════════
+#  GOOGLE SHEETS CRM SYNC
+# ══════════════════════════════════════════════════════════════
+
+def sync_lead_to_crm(phone: str, name: str, status: str, details: str = ""):
+    """Ajoute ou met à jour un prospect dans le Google Sheet CRM."""
+    if not gc or not GOOGLE_SHEET_ID:
+        return
+    
+    try:
+        sheet = gc.open_by_key(GOOGLE_SHEET_ID).sheet1
+        records = sheet.get_all_records()
+        
+        # Trouver si le numéro existe déjà
+        row_idx = None
+        for i, row in enumerate(records):
+            if str(row.get("Téléphone", "")).replace("+", "") == str(phone).replace("+", ""):
+                row_idx = i + 2  # +2 car index 0 est la ligne 2 du sheet (ligne 1 = header)
+                break
+                
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if row_idx:
+            # Mise à jour
+            sheet.update(f"C{row_idx}:E{row_idx}", [[status, details, now_str]])
+        else:
+            # Création, avec l'en-tête attendu : Nom | Téléphone | Statut | Détails | Dernière interaction
+            # S'il n'y a pas d'en-tête, on le crée (basique)
+            if not records and len(sheet.row_values(1)) == 0:
+                sheet.append_row(["Nom", "Téléphone", "Statut", "Détails", "Dernière interaction"])
+                
+            sheet.append_row([name, f"+{phone}", status, details, now_str])
+            
+    except Exception as e:
+        print(f"⚠️ Erreur de synchro CRM Google Sheets : {e}")
+
+# ══════════════════════════════════════════════════════════════
 
 async def send_whatsapp(phone: str, message: str) -> dict:
     phone = str(phone).replace("+", "").replace(" ", "").replace("-", "")
@@ -606,6 +661,17 @@ async def poll_whatsapp_messages():
                                 needs_human = True
                                 reply = reply.replace("[ALERTE_HUMAIN]", "").strip()
                                 
+                            # Synchronisation CRM
+                            crm_status = "En cours"
+                            if is_finished:
+                                crm_status = "Terminé"
+                            elif is_hot:
+                                crm_status = "🔥 Prospect Chaud"
+                            elif needs_human:
+                                crm_status = "⚠️ Demande Humain"
+                                
+                            sync_lead_to_crm(phone, name, crm_status, "A échangé avec Max.")
+                                
                             # Interception de la balise de paiement
                             import re
                             payment_match = re.search(r'\[LIEN_PAIEMENT_(\d+)\]', reply)
@@ -640,6 +706,7 @@ async def poll_whatsapp_messages():
                                     caption = f"📄 Voici votre devis pour *{devis_service}* — {int(devis_montant):,} FCFA".replace(',', ' ')
                                     await send_whatsapp_file(phone, pdf_bytes, filename, caption)
                                     print(f"📎 Devis PDF généré et envoyé à {phone} ({devis_service} — {devis_montant} FCFA)")
+                                    sync_lead_to_crm(phone, name, "Devis Envoyé", f"Devis: {devis_service} ({devis_montant} CFA)")
                                     
                                     if WA_LOG_CHANNEL:
                                         channel = bot.get_channel(WA_LOG_CHANNEL)
