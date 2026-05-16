@@ -175,7 +175,7 @@ RÈGLES STRICTES :
 9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
 10. IMPORTANT : Si le client demande un devis formel OU si un service et son prix sont confirmés, insère la balise [DEVIS:NomDuService:Montant] (ex: [DEVIS:Site Vitrine Premium:150000]) à la fin de ta réponse. Je génèrerai un beau devis PDF professionnel et l'enverrai directement sur WhatsApp.
 11. NOUVEAU POUVOIR : Tu peux envoyer des NOTES VOCALES. Si tu estimes qu'une note vocale serait plus chaleureuse, ajoute EXACTEMENT la balise [VOCAL] à la fin de ton texte. 
-    ATTENTION : Si tu utilises [VOCAL], ton texte DOIT être écrit pour être PRONONCÉ à l'oral. N'utilise AUCUNE liste à puces, pas de tirets, pas de structure complexe. Écris comme tu parles, avec de courtes phrases. Pas d'émojis dans le texte si c'est un vocal.
+    ATTENTION : Si tu utilises [VOCAL], ton texte DOIT être écrit pour être PRONONCÉ à l'oral. N'utilise AUCUNE liste à puces, pas de tirets, pas de structure complexe. Écris comme tu parles, avec de courtes phrases. Pas d'émojis dans le texte si c'est un vocal. Ne coupe jamais tes phrases. Si tu dois utiliser une balise, mets-la à la fin APRÈS un point final.
 """
 
 def get_active_model(system_instruction: str = None):
@@ -635,7 +635,7 @@ async def poll_whatsapp_messages():
                             text = body["messageData"]["fileMessageData"].get("caption", "")
                             
                             if type_msg in ["audioMessage", "pttMessage"]:
-                                text = "Un message vocal a été envoyé, voici l'audio :"
+                                text = "[Le client vient de t'envoyer ce message vocal. Écoute-le et réponds-lui OBLIGATOIREMENT avec une note vocale en ajoutant [VOCAL] à la toute fin de ta réponse. Sois chaleureuse et naturelle.]"
                             elif not text:
                                 text = "Une image a été envoyée, voici l'image :"
                                 
