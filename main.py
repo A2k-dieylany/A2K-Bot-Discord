@@ -386,9 +386,11 @@ async def poll_whatsapp_messages():
                                 reply = reply.replace(payment_match.group(0), f"\n\n👉 *Lien de paiement sécurisé* ({amount} FCFA) : {payment_link}").strip()
                                 
                             # Interception de la balise calendrier
-                            if "[LIEN_CALENDRIER]" in reply:
+                            if "[LIEN_CALENDRIER]" in reply or "[LIEN_CALENDLY]" in reply:
                                 calendar_link = "https://calendly.com/sendigitalsolution"
-                                reply = reply.replace("[LIEN_CALENDRIER]", f"\n\n📅 *Prendre Rendez-vous avec Dieylany* : {calendar_link}").strip()
+                                reply = reply.replace("[LIEN_CALENDRIER]", f"\n\n📅 *Prendre Rendez-vous avec Dieylany* : {calendar_link}")
+                                reply = reply.replace("[LIEN_CALENDLY]", f"\n\n📅 *Prendre Rendez-vous avec Dieylany* : {calendar_link}")
+                                reply = reply.strip()
                             
                             # Délai artificiel pour humaniser Max (simule le temps de frappe)
                             delay = max(2.0, min(6.0, len(reply) * 0.04))
