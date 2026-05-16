@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+
+  # 🏢 CLIENT 1 : Boutique Fashion (Numéro WhatsApp A)
+  client_fashion:
+    build: .
+    container_name: bot_fashion
+    env_file:
+      - .env.fashion  # Contient les infos Green API du client A
+    ports:
+      - "8081:8080"   # Le port 8081 du VPS pointera vers ce bot
+    volumes:
+      - db_fashion:/app/ # Sauvegarde la base de données SQLite de ce client
+    restart: always
+
+  # 🛠️ CLIENT 2 : Garage Auto (Numéro WhatsApp B)
+  client_garage:
+    build: .
+    container_name: bot_garage
+    env_file:
+      - .env.garage   # Contient les infos Green API du client B
+    ports:
+      - "8082:8080"   # Le port 8082 du VPS pointera vers ce bot
+    volumes:
+      - db_garage:/app/ # Sauvegarde la base de données SQLite de ce client
+    restart: always
+
+volumes:
+  # Déclaration des espaces de stockage isolés
+  db_fashion:
+  db_garage:

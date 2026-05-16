@@ -38,6 +38,7 @@ WA_LOG_CHANNEL = int(os.getenv("WA_LOG_CHANNEL", "0"))
 # ── Informations Business ──────────────────────────────────────
 BUSINESS_NAME  = os.getenv("BUSINESS_NAME", "notre entreprise")
 BUSINESS_INFO  = os.getenv("BUSINESS_INFO", "Nous proposons des services de qualité.")
+ADMIN_PHONE    = os.getenv("ADMIN_PHONE")
 
 # ── Base de Connaissances (Le Cerveau) ─────────────────────────
 try:
@@ -67,6 +68,12 @@ cursor.execute('''
         role TEXT,
         content TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS wa_settings (
+        phone TEXT PRIMARY KEY,
+        ai_paused BOOLEAN DEFAULT 0
     )
 ''')
 conn.commit()
@@ -117,10 +124,12 @@ TON TON & TA PERSONNALITÉ :
 RÈGLES STRICTES :
 1. Dès le premier message avec un nouveau client, tu DOIS TOUJOURS te présenter sous cette forme exacte : "Bonjour [Nom du client si connu, sinon bonjour simple] 👋 ! Je suis Max, l'assistante de Dieylany..." puis enchainer naturellement.
 2. IMPORTANT : Tu as des YEUX et des OREILLES. Si le client t'envoie une image ou une note vocale, tu es capable de les analyser et de les écouter ! Fais-y référence dans ta réponse (ex: "J'ai bien écouté ton vocal..."). Pour les autres documents PDF/Word, dis que Dieylany les regardera.
-3. Si le client demande à parler à un humain, rassure-le en lui disant que tu as notifié Dieylany et qu'il va prendre le relais sur cette conversation d'ici quelques instants.
+3. Si le client demande à parler à un humain, rassure-le en lui disant que tu as notifié Dieylany et qu'il va prendre le relais. IMPORTANT : Ajoute le texte caché EXACTEMENT [ALERTE_HUMAIN] à la fin de ton message.
 4. Si on te pose une question complexe ou hors de tes connaissances, explique avec tact que tu notes la question pour que Dieylany lui réponde avec précision.
 5. Termine souvent tes réponses par une question simple pour encourager le client à détailler son besoin (ex: "Quel type de site avez-vous en tête ?").
 6. Si le client semble très intéressé, prêt à passer commande, ou s'il demande formellement à parler à un humain/Dieylany, tu DOIS OBLIGATOIREMENT ajouter ce code secret tout à la fin de ta réponse : [ALERTE_PROSPECT]. Ce code me permettra de déclencher une alarme. Ne le mets pas pour les questions banales.
+7. IMPORTANT : Si le client veut acheter un service (ex: payer 50000 FCFA), confirme d'abord avec lui. S'il est prêt à payer, insère EXACTEMENT la balise [LIEN_PAIEMENT_X] (où X est le prix en chiffres sans espaces, ex: [LIEN_PAIEMENT_50000]) à la fin de ta réponse. Dis-lui qu'un lien sécurisé (Wave/Orange Money) vient d'être généré ci-dessous.
+8. IMPORTANT : Si le client veut prendre un rendez-vous (appel téléphonique, visio, etc.), propose-lui d'utiliser notre agenda. S'il est d'accord, insère EXACTEMENT la balise [LIEN_CALENDRIER] à la fin de ta réponse.
 """
 
 model = genai.GenerativeModel(
@@ -256,7 +265,8 @@ def get_wa_memory(phone: str, limit: int = 10) -> list:
     return [{"role": r[0], "content": r[1]} for r in cursor.fetchall()]
 
 async def ask_gemini_wa(phone: str, user_message: str, media_part=None) -> str:
-    add_to_wa_memory(phone, "user", user_message)
+    if user_message:
+        add_to_wa_memory(phone, "user", user_message)
     contents = []
     
     # On charge l'historique depuis SQLite
@@ -347,38 +357,60 @@ async def poll_whatsapp_messages():
                                 text = "[Erreur système : aucun lien de téléchargement fourni par WhatsApp.]"
 
                         print(f"📱 Message WA reçu de {name} ({phone}): {text}")
+                        
+                        # Ajouter le message utilisateur à la mémoire AVANT la vérification de pause
+                        add_to_wa_memory(phone, "user", text)
 
-                        # Générer réponse IA
-                        reply = await ask_gemini_wa(phone, text, media_part)
-
-                        # Détection prospect chaud
-                        is_hot = False
-                        if "[ALERTE_PROSPECT]" in reply:
-                            is_hot = True
-                            reply = reply.replace("[ALERTE_PROSPECT]", "").strip()
-
-                        # Délai artificiel pour humaniser Max (simule le temps de frappe)
-                        # Par exemple: 0.04 sec par caractère, bloqué entre 2s et 6s
-                        delay = max(2.0, min(6.0, len(reply) * 0.04))
-                        await asyncio.sleep(delay)
-
-                        # Envoyer la réponse sur WhatsApp
-                        await send_whatsapp(phone, reply)
-
-                        # Logger sur Discord
-                        if WA_LOG_CHANNEL:
-                            channel = bot.get_channel(WA_LOG_CHANNEL)
-                            if channel:
-                                embed = discord.Embed(
-                                    title="🔥 PROSPECT CHAUD ! Action requise" if is_hot else "📱 Nouveau message WhatsApp",
-                                    color=0xFF4500 if is_hot else 0x25D366
-                                )
-                                embed.add_field(name="👤 De", value=f"{name} (`{phone}`)", inline=False)
-                                embed.add_field(name="💬 Message client", value=text if text else "(Fichier/Image envoyé)", inline=False)
-                                embed.add_field(name="🤖 Réponse Max", value=reply, inline=False)
-                                embed.timestamp = datetime.now()
-                                content = "@everyone 🚨 **Dieylany, un prospect t'attend sur WhatsApp !**" if is_hot else None
-                                await channel.send(content=content, embed=embed)
+                        # Vérifier si l'IA est en pause pour ce client
+                        cursor.execute("SELECT ai_paused FROM wa_settings WHERE phone = ?", (phone,))
+                        row = cursor.fetchone()
+                        
+                        if row and row[0]:
+                            print(f"⏸️ IA en pause pour {phone}. Message stocké mais ignoré par Max.")
+                        else:
+                            # Générer réponse IA (ask_gemini_wa ne doit plus ajouter le user_message puisqu'on l'a déjà fait)
+                            reply = await ask_gemini_wa(phone, "", media_part)
+                            
+                            # Détection prospect chaud
+                            is_hot = False
+                            if "[ALERTE_PROSPECT]" in reply:
+                                is_hot = True
+                                reply = reply.replace("[ALERTE_PROSPECT]", "").strip()
+                                
+                            # Interception de la balise de paiement
+                            import re
+                            payment_match = re.search(r'\[LIEN_PAIEMENT_(\d+)\]', reply)
+                            if payment_match:
+                                amount = payment_match.group(1)
+                                payment_link = f"http://localhost:8080/pay?amount={amount}&phone={phone.replace('+', '')}"
+                                reply = reply.replace(payment_match.group(0), f"\n\n👉 *Lien de paiement sécurisé* ({amount} FCFA) : {payment_link}").strip()
+                                
+                            # Interception de la balise calendrier
+                            if "[LIEN_CALENDRIER]" in reply:
+                                calendar_link = "https://calendly.com/sendigitalsolution"
+                                reply = reply.replace("[LIEN_CALENDRIER]", f"\n\n📅 *Prendre Rendez-vous avec Dieylany* : {calendar_link}").strip()
+                            
+                            # Délai artificiel pour humaniser Max (simule le temps de frappe)
+                            delay = max(2.0, min(6.0, len(reply) * 0.04))
+                            await asyncio.sleep(delay)
+                            
+                            # Envoyer la réponse sur WhatsApp
+                            await send_whatsapp(phone, reply)
+                            
+                            # Logger sur Discord
+                            if WA_LOG_CHANNEL:
+                                channel = bot.get_channel(WA_LOG_CHANNEL)
+                                if channel:
+                                    embed = discord.Embed(
+                                        title="🔥 PROSPECT CHAUD ! Action requise" if is_hot else "📱 Nouveau message WhatsApp",
+                                        color=0xFF4500 if is_hot else 0x25D366
+                                    )
+                                    embed.add_field(name="👤 De", value=f"{name} (`{phone}`)", inline=False)
+                                    embed.add_field(name="💬 Message client", value=text if text else "(Fichier/Image envoyé)", inline=False)
+                                    embed.add_field(name="🤖 Réponse Max", value=reply, inline=False)
+                                    embed.timestamp = datetime.now()
+                                    content = "@everyone 🚨 **Dieylany, un prospect t'attend sur WhatsApp !**" if is_hot else None
+                                    await channel.send(content=content, embed=embed)
 
                     # Supprimer la notification traitée
                     async with session.delete(f"{delete_url}/{receipt_id}") as _:
@@ -390,8 +422,42 @@ async def poll_whatsapp_messages():
             await asyncio.sleep(5)
 
 # ══════════════════════════════════════════════════════════════
-#  WHATSAPP — Planification & Webhook
+#  WHATSAPP — Planification & Webhook & Rapports
 # ══════════════════════════════════════════════════════════════
+
+async def generate_and_send_report():
+    """Génère un rapport hebdo des statistiques et l'envoie sur Discord et WhatsApp perso."""
+    try:
+        cursor.execute("SELECT COUNT(DISTINCT phone) FROM wa_memory WHERE role = 'user'")
+        total_clients = cursor.fetchone()[0] or 0
+        
+        cursor.execute("SELECT COUNT(*) FROM wa_memory")
+        total_messages = cursor.fetchone()[0] or 0
+        
+        report_text = (
+            f"📊 *RAPPORT HEBDOMADAIRE - {BUSINESS_NAME}* 📊\n\n"
+            f"👥 *Nouveaux Contacts :* {total_clients}\n"
+            f"💬 *Messages Échangés :* {total_messages}\n\n"
+            f"💡 Ton assistant Max a géré tout ça pendant que tu te concentrais sur ton business. Bon week-end boss ! 🚀"
+        )
+        
+        # Envoi Discord
+        if WA_LOG_CHANNEL:
+            channel = bot.get_channel(WA_LOG_CHANNEL)
+            if channel:
+                await channel.send(f"📈 **Rapport Hebdomadaire Généré**\n\n{report_text}")
+                
+        # Envoi WhatsApp perso
+        if ADMIN_PHONE:
+            await send_whatsapp(ADMIN_PHONE, report_text)
+            print(f"✅ Rapport hebdo envoyé à l'admin ({ADMIN_PHONE})")
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la génération du rapport : {e}")
+
+@bot.tree.command(name="wa_rapport", description="Génère et t'envoie le rapport de stats sur WhatsApp instantanément")
+async def cmd_wa_rapport(interaction: discord.Interaction):
+    await interaction.response.send_message("📊 Génération du rapport en cours... Vérifie ton WhatsApp !", ephemeral=True)
+    await generate_and_send_report()
 
 async def execute_planned_message(numeros: list, message: str, label: str):
     """Exécute un envoi programmé."""
@@ -414,6 +480,313 @@ async def execute_planned_message(numeros: list, message: str, label: str):
                 f"📢 Envoyé à **{len(numeros)}** contacts\n"
                 f"💬 Message : *{message}*"
             )
+
+# ── Webhook HTTP & Dashboard ───────────────────────────────────
+
+async def show_dashboard(request):
+    """Affiche une page HTML avec l'historique des conversations SQLite."""
+    import json
+    import os
+    
+    cursor.execute('''
+        SELECT phone, role, content, timestamp 
+        FROM wa_memory 
+        ORDER BY timestamp DESC 
+        LIMIT 300
+    ''')
+    rows = cursor.fetchall()
+    
+    cursor.execute('SELECT phone, ai_paused FROM wa_settings')
+    settings = {row[0]: bool(row[1]) for row in cursor.fetchall()}
+    
+    # Organiser les messages par numéro de téléphone
+    conversations = {}
+    for r in rows:
+        phone, role, content, timestamp = r
+        if phone not in conversations:
+            conversations[phone] = []
+        conversations[phone].append({'role': role, 'content': content, 'timestamp': timestamp})
+        
+    data_to_inject = {}
+    for phone, msgs in conversations.items():
+        data_to_inject[phone] = {
+            "messages": msgs,
+            "ai_paused": settings.get(phone, False)
+        }
+        
+    try:
+        with open("dashboard.html", "r", encoding="utf-8") as f:
+            html_template = f.read()
+    except FileNotFoundError:
+        return web.Response(text="Erreur : le fichier dashboard.html est introuvable.", status=500)
+        
+    # Injecter les données JSON dans le HTML de manière sécurisée
+    html = html_template.replace("__DATA_JSON__", json.dumps(data_to_inject))
+    
+    return web.Response(text=html, content_type='text/html')
+
+async def export_contacts(request: web.Request) -> web.Response:
+    """Endpoint pour exporter tous les numéros en CSV pour le marketing."""
+    cursor.execute("SELECT DISTINCT phone FROM wa_memory")
+    rows = cursor.fetchall()
+    
+    csv_content = "Telephone\n"
+    for r in rows:
+        csv_content += f"{r[0]}\n"
+        
+    return web.Response(
+        text=csv_content,
+        content_type='text/csv',
+        headers={"Content-Disposition": "attachment; filename=clients_whatsapp.csv"}
+    )
+
+async def toggle_ai(request: web.Request) -> web.Response:
+    """Active ou désactive l'IA pour un numéro donné."""
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        if not phone: return web.json_response({"error": "phone requis"}, status=400)
+        
+        cursor.execute("SELECT ai_paused FROM wa_settings WHERE phone = ?", (phone,))
+        row = cursor.fetchone()
+        new_status = not row[0] if row else True
+        
+        cursor.execute("INSERT OR REPLACE INTO wa_settings (phone, ai_paused) VALUES (?, ?)", (phone, new_status))
+        conn.commit()
+        return web.json_response({"success": True, "ai_paused": new_status})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+async def send_manual(request: web.Request) -> web.Response:
+    """Envoie un message WhatsApp depuis le Dashboard en tant qu'humain."""
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        message = data.get("message")
+        if not phone or not message: return web.json_response({"error": "Données invalides"}, status=400)
+        
+        # Envoi WhatsApp
+        await send_whatsapp(phone, message)
+        
+        # Sauvegarde en base
+        add_to_wa_memory(phone, "assistant", message)
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+async def show_payment_page(request: web.Request) -> web.Response:
+    """Affiche une fausse page de paiement pour la démo Wave/Orange Money."""
+    amount = request.query.get("amount", "0")
+    phone = request.query.get("phone", "Inconnu")
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Paiement Sécurisé - A2K</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+            .card {{ background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }}
+            h2 {{ color: #1f2937; margin-bottom: 10px; font-size: 22px; }}
+            .amount {{ font-size: 36px; font-weight: bold; color: #10b981; margin: 20px 0; }}
+            .btn-wave {{ background: #1da1f2; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 15px; transition: 0.2s; }}
+            .btn-wave:hover {{ background: #0c85d0; }}
+            .btn-orange {{ background: #ff7900; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }}
+            .btn-orange:hover {{ background: #e66d00; }}
+            .footer {{ margin-top: 20px; font-size: 12px; color: #9ca3af; }}
+        </style>
+    </head>
+    <body>
+        <div class="card" id="payment-card">
+            <h2>🛍️ Finalisez votre Commande</h2>
+            <p style="color: #6b7280; font-size: 14px;">Destinataire : <strong>A2K Agency</strong></p>
+            <div class="amount">{amount} FCFA</div>
+            <button class="btn-wave" onclick="pay('Wave')">Payer avec Wave 🌊</button>
+            <button class="btn-orange" onclick="pay('Orange Money')">Payer avec Orange Money 🟠</button>
+            <div class="footer">🔒 Paiement 100% sécurisé</div>
+        </div>
+        <script>
+            function pay(method) {{
+                const card = document.getElementById('payment-card');
+                card.innerHTML = "<h2>⏳ Traitement en cours...</h2><p>Veuillez valider sur votre téléphone.</p>";
+                
+                // Simulation du délai de validation
+                setTimeout(() => {{
+                    fetch('/process_payment', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{phone: '{phone}', amount: '{amount}', method: method}})
+                    }}).then(() => {{
+                        card.innerHTML = "<h2>✅ Paiement Réussi !</h2><p style='color: #10b981;'>Merci de votre confiance.</p><p style='font-size:14px; color:#6b7280;'>Un reçu vous a été envoyé sur WhatsApp.</p>";
+                    }});
+                }}, 2000);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type='text/html')
+
+async def process_payment(request: web.Request) -> web.Response:
+    """Endpoint appelé quand le client valide le paiement sur la page web."""
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        amount = data.get("amount")
+        method = data.get("method")
+        
+        # Le bot reprend la parole pour confirmer
+        message = f"✅ *Confirmation de Paiement*\n\nSuper ! Nous avons bien reçu votre paiement de *{amount} FCFA* via {method}. 🎉\n\nL'équipe A2K prend en charge votre projet immédiatement !"
+        
+        # On désactive la pause si l'humain avait pris le relais, car c'est une notification auto
+        cursor.execute("UPDATE wa_settings SET ai_paused = 0 WHERE phone = ?", (phone,))
+        conn.commit()
+        
+        await send_whatsapp(phone, message)
+        add_to_wa_memory(phone, "assistant", message)
+        
+        # Notifier l'équipe sur Discord
+        if WA_LOG_CHANNEL:
+            channel = bot.get_channel(WA_LOG_CHANNEL)
+            if channel:
+                embed = discord.Embed(title="💸 NOUVEAU PAIEMENT REÇU !", color=0x10B981)
+                embed.add_field(name="📱 Client", value=f"+{phone}", inline=True)
+                embed.add_field(name="💰 Montant", value=f"{amount} FCFA", inline=True)
+                embed.add_field(name="💳 Moyen", value=method, inline=True)
+                await channel.send("@everyone 💸 **Cha-Ching !**", embed=embed)
+                
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+async def show_calendar_page(request: web.Request) -> web.Response:
+    """Affiche une interface de prise de rendez-vous interactive."""
+    phone = request.query.get("phone", "")
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Prendre Rendez-vous - A2K</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+            .card {{ background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }}
+            h2 {{ color: #1f2937; margin-top: 0; font-size: 24px; }}
+            h3 {{ font-size: 16px; color: #4b5563; margin-top: 25px; margin-bottom: 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px; }}
+            .date-grid, .time-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
+            .btn {{ padding: 12px 5px; border: 2px solid #e5e7eb; background: white; border-radius: 10px; cursor: pointer; transition: 0.2s; text-align: center; font-weight: 600; font-size: 14px; color: #374151; }}
+            .btn:hover {{ border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }}
+            .btn.selected {{ background: #3b82f6; color: white; border-color: #3b82f6; }}
+            .submit-btn {{ background: #10b981; color: white; border: none; padding: 16px; width: 100%; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 30px; }}
+            .submit-btn:hover {{ background: #059669; transform: translateY(-2px); }}
+            .submit-btn:disabled {{ background: #d1d5db; cursor: not-allowed; transform: none; }}
+        </style>
+    </head>
+    <body>
+        <div class="card" id="calendar-card">
+            <h2>📅 Planifier un Appel</h2>
+            <p style="color: #6b7280; font-size: 15px; margin-bottom: 20px;">Choisissez une date et une heure pour discuter de votre projet avec Dieylany.</p>
+            
+            <h3>1. Choisissez une Date</h3>
+            <div class="date-grid" id="dates"></div>
+            
+            <h3>2. Choisissez une Heure</h3>
+            <div class="time-grid" id="times">
+                <button class="btn time-btn" onclick="selectTime(this, '10:00')">10:00</button>
+                <button class="btn time-btn" onclick="selectTime(this, '14:00')">14:00</button>
+                <button class="btn time-btn" onclick="selectTime(this, '16:30')">16:30</button>
+            </div>
+            
+            <button class="submit-btn" id="confirm-btn" onclick="bookMeeting()" disabled>Confirmer le Rendez-vous</button>
+        </div>
+        
+        <script>
+            let selectedDate = null;
+            let selectedTime = null;
+            
+            const datesContainer = document.getElementById('dates');
+            let currentDay = new Date();
+            let added = 0;
+            
+            // Générer les 3 prochains jours ouvrés
+            while(added < 3) {{
+                currentDay.setDate(currentDay.getDate() + 1);
+                if(currentDay.getDay() !== 0 && currentDay.getDay() !== 6) {{
+                    const dateStr = currentDay.toLocaleDateString('fr-FR', {{weekday: 'short', day: 'numeric', month: 'short'}});
+                    const isoDate = currentDay.toISOString().split('T')[0];
+                    datesContainer.innerHTML += `<button class="btn date-btn" onclick="selectDate(this, '${{isoDate}}', '${{dateStr}}')">${{dateStr}}</button>`;
+                    added++;
+                }}
+            }}
+            
+            function selectDate(btn, iso, str) {{
+                document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedDate = str;
+                checkReady();
+            }}
+            
+            function selectTime(btn, time) {{
+                document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedTime = time;
+                checkReady();
+            }}
+            
+            function checkReady() {{
+                document.getElementById('confirm-btn').disabled = !(selectedDate && selectedTime);
+            }}
+            
+            function bookMeeting() {{
+                const card = document.getElementById('calendar-card');
+                card.innerHTML = "<h2>⏳ Réservation en cours...</h2><p>Validation avec l'agenda de Dieylany.</p>";
+                
+                fetch('/book_meeting', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{phone: '{phone}', date: selectedDate, time: selectedTime}})
+                }}).then(() => {{
+                    card.innerHTML = "<h2>✅ Rendez-vous Confirmé !</h2><p style='color: #10b981;'>C'est noté dans l'agenda.</p><p style='font-size:15px; color:#4b5563;'>Dieylany vous appellera le <strong>" + selectedDate + " à " + selectedTime + "</strong>.</p><p style='font-size:14px; color:#9ca3af; margin-top:20px;'>Vous pouvez fermer cette page, une confirmation vous a été envoyée sur WhatsApp.</p>";
+                }});
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type='text/html')
+
+async def book_meeting(request: web.Request) -> web.Response:
+    """Endpoint appelé quand le client valide un créneau."""
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        date = data.get("date")
+        time = data.get("time")
+        
+        message = f"✅ *Rendez-vous Confirmé !*\n\nParfait, c'est noté dans l'agenda. 📅\nDieylany vous contactera le *{date} à {time}* pour discuter de votre projet. À très vite ! 👋"
+        
+        cursor.execute("UPDATE wa_settings SET ai_paused = 0 WHERE phone = ?", (phone,))
+        conn.commit()
+        
+        await send_whatsapp(phone, message)
+        add_to_wa_memory(phone, "assistant", message)
+        
+        if WA_LOG_CHANNEL:
+            channel = bot.get_channel(WA_LOG_CHANNEL)
+            if channel:
+                embed = discord.Embed(title="📅 NOUVEAU RENDEZ-VOUS !", color=0x3B82F6)
+                embed.add_field(name="📱 Client", value=f"+{phone}", inline=True)
+                embed.add_field(name="📆 Date", value=date, inline=True)
+                embed.add_field(name="⏰ Heure", value=time, inline=True)
+                await channel.send("@everyone 📅 **Nouveau call booké ! Prépare tes notes.**", embed=embed)
+                
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 async def handle_form_notification(request: web.Request) -> web.Response:
     """Endpoint HTTP POST /notify pour notifications de formulaire"""
@@ -456,11 +829,19 @@ async def handle_form_notification(request: web.Request) -> web.Response:
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
-async def start_webhook_server():
-    """Lance le serveur HTTP pour les notifications formulaire."""
-    app_web = web.Application()
-    app_web.router.add_post("/notify", handle_form_notification)
-    runner = web.AppRunner(app_web)
+async def start_web_server():
+    """Démarre le serveur aiohttp."""
+    app = web.Application()
+    app.router.add_get('/', show_dashboard)
+    app.router.add_get('/export', export_contacts)
+    app.router.add_post('/toggle_ai', toggle_ai)
+    app.router.add_post('/send_manual', send_manual)
+    app.router.add_get('/pay', show_payment_page)
+    app.router.add_post('/process_payment', process_payment)
+    app.router.add_get('/calendar', show_calendar_page)
+    app.router.add_post('/book_meeting', book_meeting)
+    app.router.add_post('/notify', handle_form_notification)
+    runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
@@ -488,9 +869,20 @@ async def on_ready():
     # Lancer les automatisations en arrière-plan
     if WA_ID_INSTANCE and WA_API_TOKEN:
         bot.loop.create_task(poll_whatsapp_messages())
-        bot.loop.create_task(start_webhook_server())
+        bot.loop.create_task(start_web_server())
+        
+        # Planifier le rapport hebdomadaire (Ex: tous les vendredis à 18h)
+        scheduler.add_job(
+            generate_and_send_report,
+            "cron",
+            day_of_week="fri",
+            hour=18,
+            minute=0,
+            id="weekly_report"
+        )
+        
         scheduler.start()
-        print("✅ Automatisations WhatsApp actives (SAV IA, Webhook, Planning) !")
+        print("✅ Automatisations WhatsApp actives (SAV IA, Webhook, Planning, Rapports) !")
     else:
         print("⚠️ WhatsApp non configuré (Green API missing)")
 
