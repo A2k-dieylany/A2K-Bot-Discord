@@ -26,7 +26,14 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_NAME      = os.getenv("BOT_NAME", "MonBot")
 MAX_HISTORY   = int(os.getenv("MAX_HISTORY", 20))
-MODEL_NAME    = "gemini-2.5-flash"   # Modèle sans limite de quota atteinte
+# Liste de modèles par ordre de préférence — rotation automatique si quota dépassé
+MODELS_ROTATION = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
+]
+current_model_index = 0
+MODEL_NAME = MODELS_ROTATION[0]
 
 # ── WhatsApp (Green API) ───────────────────────────────────────
 WA_ID_INSTANCE = os.getenv("WA_ID_INSTANCE")
@@ -140,15 +147,43 @@ RÈGLES STRICTES :
 9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
 """
 
-model = genai.GenerativeModel(
-    model_name=MODEL_NAME,
-    system_instruction=SYSTEM_PROMPT
-)
+def get_active_model(system_instruction: str = None):
+    """Retourne un modèle Gemini actif. Fait une rotation si quota dépassé."""
+    return genai.GenerativeModel(
+        model_name=MODELS_ROTATION[current_model_index],
+        system_instruction=system_instruction
+    )
 
-wa_model = genai.GenerativeModel(
-    model_name=MODEL_NAME,
-    system_instruction=SAV_PROMPT
-)
+async def gemini_generate(prompt_or_contents, system_instruction: str = None, is_wa: bool = False) -> str:
+    """Génère du contenu avec rotation automatique des modèles en cas de quota 429."""
+    global current_model_index
+    
+    for attempt in range(len(MODELS_ROTATION)):
+        idx = (current_model_index + attempt) % len(MODELS_ROTATION)
+        model_name = MODELS_ROTATION[idx]
+        try:
+            active_model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_instruction
+            )
+            if isinstance(prompt_or_contents, str):
+                response = await active_model.generate_content_async(prompt_or_contents)
+            else:
+                response = await active_model.generate_content_async(
+                    prompt_or_contents,
+                    generation_config=genai.types.GenerationConfig(temperature=0.7, max_output_tokens=1000)
+                )
+            if idx != current_model_index:
+                print(f"🔄 Modèle actif changé → {model_name}")
+                current_model_index = idx
+            return response.text
+        except Exception as e:
+            if "429" in str(e) or "Quota" in str(e):
+                print(f"⚠️ Quota dépassé sur {model_name}, tentative avec le prochain modèle...")
+                continue
+            raise e
+    
+    return "⏳ Tous les modèles IA ont atteint leur quota. Réessaie dans quelques minutes."
 
 # ══════════════════════════════════════════════════════════════
 #  FONCTIONS UTILITAIRES (Discord IA)
@@ -171,20 +206,10 @@ async def ask_gemini(session_id: int, user_message: str) -> str:
         contents.append({"role": role, "parts": [msg["content"]]})
         
     try:
-        response = await model.generate_content_async(
-            contents,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=2000,
-            )
-        )
-        reply = response.text
+        reply = await gemini_generate(contents, system_instruction=SYSTEM_PROMPT)
         add_to_memory(session_id, "assistant", reply)
         return reply
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "Quota exceeded" in error_msg:
-            return "⏳ Oups, j'ai reçu trop de questions en même temps ! Peux-tu patienter 15 secondes et me reposer la question ? 😊"
         return f"❌ Erreur : {e}"
 
 def split_message(text: str, limit: int = 1990) -> list[str]:
@@ -290,21 +315,11 @@ async def ask_gemini_wa(phone: str, user_message: str, media_part=None) -> str:
         contents[-1]["parts"].insert(0, media_part)
         
     try:
-        response = await wa_model.generate_content_async(
-            contents,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=1000,
-            )
-        )
-        reply = response.text
+        reply = await gemini_generate(contents, system_instruction=SAV_PROMPT, is_wa=True)
         add_to_wa_memory(phone, "assistant", reply)
         return reply
     except Exception as e:
-        error_msg = str(e)
-        print(f"🔴 ERREUR GEMINI DÉTAILLÉE : {error_msg}")
-        if "429" in error_msg or "Quota exceeded" in error_msg:
-            return "⏳ Oups, on dirait que je réfléchis trop vite ! Laisse-moi 15 secondes pour souffler et renvoie-moi ton message. 😊"
+        print(f"🔴 Erreur inattendue ask_gemini_wa : {e}")
         return f"❌ Erreur : {e}"
 
 async def poll_whatsapp_messages():
