@@ -255,13 +255,16 @@ async def send_embed_reply(interaction: discord.Interaction, title: str, text: s
 # ══════════════════════════════════════════════════════════════
 
 async def send_whatsapp(phone: str, message: str) -> dict:
-    phone = phone.replace("+", "").replace(" ", "").replace("-", "")
+    phone = str(phone).replace("+", "").replace(" ", "").replace("-", "")
     chat_id = f"{phone}@c.us"
     url = f"https://api.green-api.com/waInstance{WA_ID_INSTANCE}/sendMessage/{WA_API_TOKEN}"
     body = {"chatId": chat_id, "message": message}
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=body) as resp:
-            return await resp.json()
+            result = await resp.json()
+            print(f"📤 Envoi WA → {phone} | Statut: {resp.status} | Réponse: {result}")
+            return result
+
 
 def add_to_wa_memory(phone: str, role: str, content: str):
     cursor.execute("INSERT INTO wa_memory (phone, role, content) VALUES (?, ?, ?)", (phone, role, content))
@@ -502,15 +505,15 @@ async def cmd_wa_rapport(interaction: discord.Interaction):
     await interaction.response.send_message("📊 Génération du rapport en cours... Vérifie ton WhatsApp !", ephemeral=True)
     await generate_and_send_report()
 
-async def check_and_send_followups():
+async def check_and_send_followups(force=False):
     """Vérifie toutes les 30 minutes s'il faut relancer des clients après 48h de silence."""
     try:
-        # Chercher ceux en 'pending' dont le dernier message du bot date de > 48h
-        cursor.execute("""
-            SELECT phone FROM wa_followups 
-            WHERE status = 'pending' 
-            AND last_bot_msg <= datetime('now', '-48 hours')
-        """)
+        # Chercher ceux en 'pending'
+        query = "SELECT phone FROM wa_followups WHERE status = 'pending'"
+        if not force:
+            query += " AND last_bot_msg <= datetime('now', '-48 hours')"
+            
+        cursor.execute(query)
         rows = cursor.fetchall()
         for r in rows:
             phone = r[0]
@@ -544,8 +547,8 @@ async def check_and_send_followups():
 
 @bot.tree.command(name="wa_force_relance", description="[Admin] Force la vérification immédiate des relances Drip Marketing")
 async def cmd_wa_force_relance(interaction: discord.Interaction):
-    await interaction.response.send_message("🔍 Lancement de la routine de relance en arrière-plan...", ephemeral=True)
-    await check_and_send_followups()
+    await interaction.response.send_message("🔍 Lancement forcé de la relance (ignore la limite des 48h)...", ephemeral=True)
+    await check_and_send_followups(force=True)
 
 async def execute_planned_message(numeros: list, message: str, label: str):
     """Exécute un envoi programmé."""
