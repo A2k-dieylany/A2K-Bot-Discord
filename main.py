@@ -18,6 +18,14 @@ import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
 import sqlite3
+import io
+import base64
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 # ── Configuration ──────────────────────────────────────────────
 load_dotenv()
@@ -145,6 +153,7 @@ RÈGLES STRICTES :
 7. IMPORTANT : Si le client veut acheter un service (ex: payer 50000 FCFA), confirme d'abord avec lui. S'il est prêt à payer, insère EXACTEMENT la balise [LIEN_PAIEMENT_X] (où X est le prix en chiffres sans espaces, ex: [LIEN_PAIEMENT_50000]) à la fin de ta réponse. Dis-lui qu'un lien sécurisé (Wave/Orange Money) vient d'être généré ci-dessous.
 8. IMPORTANT : Si le client veut prendre un rendez-vous (appel téléphonique, visio, etc.), propose-lui d'utiliser notre agenda. S'il est d'accord, insère EXACTEMENT la balise [LIEN_CALENDRIER] à la fin de ta réponse.
 9. IMPORTANT : Si tu estimes que la discussion est totalement terminée de manière naturelle (ex: le client a dit au revoir, "merci c'est tout", ou a pris son RDV), insère EXACTEMENT la balise [FIN_DISCUSSION] à la fin de ta réponse. Cela permettra au bot de savoir qu'il ne doit plus relancer le client.
+10. IMPORTANT : Si le client demande un devis formel OU si un service et son prix sont confirmés, insère la balise [DEVIS:NomDuService:Montant] (ex: [DEVIS:Site Vitrine Premium:150000]) à la fin de ta réponse. Je génèrerai un beau devis PDF professionnel et l'enverrai directement sur WhatsApp.
 """
 
 def get_active_model(system_instruction: str = None):
@@ -153,6 +162,173 @@ def get_active_model(system_instruction: str = None):
         model_name=MODELS_ROTATION[current_model_index],
         system_instruction=system_instruction
     )
+
+# ══════════════════════════════════════════════════════════════
+#  GÉNÉRATION DE DEVIS PDF PROFESSIONNEL
+# ══════════════════════════════════════════════════════════════
+
+def generate_devis_pdf(client_phone: str, service: str, montant: str, client_name: str = "Client") -> bytes:
+    """Génère un devis PDF professionnel aux couleurs de Sen Digital Solution."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    
+    styles = getSampleStyleSheet()
+    
+    # Couleurs SDS
+    DARK_BG   = colors.HexColor('#0A0E1A')
+    ACCENT    = colors.HexColor('#6C63FF')
+    GOLD      = colors.HexColor('#FFD700')
+    LIGHT_TXT = colors.HexColor('#CCCCCC')
+    WHITE     = colors.white
+    
+    title_style = ParagraphStyle('title', fontName='Helvetica-Bold', fontSize=22, textColor=WHITE, alignment=TA_CENTER, spaceAfter=6)
+    sub_style   = ParagraphStyle('sub', fontName='Helvetica', fontSize=11, textColor=LIGHT_TXT, alignment=TA_CENTER, spaceAfter=4)
+    label_style = ParagraphStyle('label', fontName='Helvetica-Bold', fontSize=10, textColor=ACCENT)
+    value_style = ParagraphStyle('value', fontName='Helvetica', fontSize=10, textColor=colors.black)
+    footer_style= ParagraphStyle('footer', fontName='Helvetica-Oblique', fontSize=8, textColor=LIGHT_TXT, alignment=TA_CENTER)
+    
+    now = datetime.now()
+    devis_num = f"SDS-{now.strftime('%Y%m%d')}-{client_phone[-4:]}"
+    
+    story = []
+    
+    # En-tête colorée
+    header_data = [[
+        Paragraph("<b>SEN DIGITAL SOLUTION</b>", title_style),
+    ]]
+    header_table = Table(header_data, colWidths=[17*cm])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), DARK_BG),
+        ('TOPPADDING', (0,0), (-1,-1), 18),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('ROUNDEDCORNERS', [8]),
+    ]))
+    story.append(header_table)
+    
+    # Sous-titre
+    sub_data = [[
+        Paragraph("Agence IA & Automatisation | sendigitalsolution.com", sub_style),
+    ]]
+    sub_table = Table(sub_data, colWidths=[17*cm])
+    sub_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), DARK_BG),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 18),
+    ]))
+    story.append(sub_table)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Titre DEVIS
+    story.append(Paragraph(f"<font color='#{ACCENT.hexval()[2:]}'>DEVIS N°</font> {devis_num}", ParagraphStyle('dnum', fontName='Helvetica-Bold', fontSize=16, alignment=TA_LEFT, spaceAfter=4)))
+    story.append(Paragraph(f"Date : {now.strftime('%d/%m/%Y')} | Valable 30 jours", ParagraphStyle('date', fontName='Helvetica', fontSize=9, textColor=colors.grey, spaceAfter=12)))
+    story.append(HRFlowable(width="100%", thickness=2, color=ACCENT))
+    story.append(Spacer(1, 0.4*cm))
+    
+    # Informations client
+    client_data = [
+        [Paragraph("CLIENT", label_style), Paragraph("AGENCE", label_style)],
+        [Paragraph(client_name, value_style), Paragraph("Sen Digital Solution", value_style)],
+        [Paragraph(f"WhatsApp : +{client_phone}", value_style), Paragraph("sendigitalsolution@gmail.com", value_style)],
+        [Paragraph("", value_style), Paragraph("Dakar, Sénégal", value_style)],
+    ]
+    client_table = Table(client_data, colWidths=[8.5*cm, 8.5*cm])
+    client_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (1,0), colors.HexColor('#F0EEFF')),
+        ('FONTNAME', (0,0), (1,0), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0,0), (1,0), ACCENT),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
+    ]))
+    story.append(client_table)
+    story.append(Spacer(1, 0.6*cm))
+    
+    # Détail de la prestation
+    story.append(Paragraph("DÉTAIL DE LA PRESTATION", label_style))
+    story.append(Spacer(1, 0.2*cm))
+    
+    montant_int = int(montant.replace(' ', '').replace(',',''))
+    tva = 0  # Pas de TVA (Afrique de l'Ouest adapté)
+    
+    items_data = [
+        [Paragraph("<b>Description</b>", ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
+         Paragraph("<b>Qté</b>", ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_CENTER)),
+         Paragraph("<b>Prix unitaire</b>", ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_RIGHT)),
+         Paragraph("<b>Total</b>", ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_RIGHT))],
+        [Paragraph(service, value_style),
+         Paragraph("1", ParagraphStyle('v', fontName='Helvetica', fontSize=10, alignment=TA_CENTER)),
+         Paragraph(f"{montant_int:,} FCFA".replace(',', ' '), ParagraphStyle('v', fontName='Helvetica', fontSize=10, alignment=TA_RIGHT)),
+         Paragraph(f"{montant_int:,} FCFA".replace(',', ' '), ParagraphStyle('v', fontName='Helvetica', fontSize=10, alignment=TA_RIGHT))],
+        [Paragraph("<i>✓ Hébergement + Nom de domaine offerts (1 an)</i>", ParagraphStyle('incl', fontName='Helvetica-Oblique', fontSize=8, textColor=colors.HexColor('#27AE60'))),
+         Paragraph("", value_style), Paragraph("", value_style), Paragraph("", value_style)],
+        [Paragraph("<i>✓ 3 mois de maintenance gratuite post-livraison</i>", ParagraphStyle('incl', fontName='Helvetica-Oblique', fontSize=8, textColor=colors.HexColor('#27AE60'))),
+         Paragraph("", value_style), Paragraph("", value_style), Paragraph("", value_style)],
+    ]
+    items_table = Table(items_data, colWidths=[9*cm, 2*cm, 3*cm, 3*cm])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), ACCENT),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F9F9F9')),
+    ]))
+    story.append(items_table)
+    story.append(Spacer(1, 0.3*cm))
+    
+    # Total
+    total_data = [
+        [Paragraph("Sous-total", value_style), Paragraph(f"{montant_int:,} FCFA".replace(',', ' '), ParagraphStyle('r', fontName='Helvetica', fontSize=10, alignment=TA_RIGHT))],
+        [Paragraph("Acompte (50%)", ParagraphStyle('acc', fontName='Helvetica', fontSize=10, textColor=colors.HexColor('#E74C3C'))),
+         Paragraph(f"{montant_int//2:,} FCFA".replace(',', ' '), ParagraphStyle('r', fontName='Helvetica', fontSize=10, textColor=colors.HexColor('#E74C3C'), alignment=TA_RIGHT))],
+        [Paragraph("<b>TOTAL TTC</b>", ParagraphStyle('tot', fontName='Helvetica-Bold', fontSize=12, textColor=WHITE)),
+         Paragraph(f"<b>{montant_int:,} FCFA</b>".replace(',', ' '), ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=12, textColor=WHITE, alignment=TA_RIGHT))],
+    ]
+    total_table = Table(total_data, colWidths=[13*cm, 4*cm])
+    total_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,2), (-1,2), ACCENT),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(total_table)
+    story.append(Spacer(1, 0.8*cm))
+    
+    # Moyens de paiement
+    story.append(Paragraph("<b>Moyens de paiement acceptés :</b> Wave 🌊 • Orange Money 🟠 • Virement bancaire • PayPal", ParagraphStyle('pay', fontName='Helvetica', fontSize=9, textColor=colors.HexColor('#555555'))))
+    story.append(Spacer(1, 0.8*cm))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#E0E0E0')))
+    story.append(Spacer(1, 0.3*cm))
+    
+    # Pied de page
+    story.append(Paragraph("Merci de votre confiance ❤️ | Sen Digital Solution — Votre partenaire en transformation digitale & IA", footer_style))
+    story.append(Paragraph("Ce devis a été généré automatiquement par Max, l'assistant IA de Sen Digital Solution.", footer_style))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.read()
+
+async def send_whatsapp_file(phone: str, file_bytes: bytes, filename: str, caption: str = ""):
+    """Envoie un fichier (PDF, image...) sur WhatsApp via Green API."""
+    phone = str(phone).replace("+", "").replace(" ", "").replace("-", "")
+    chat_id = f"{phone}@c.us"
+    url = f"https://api.green-api.com/waInstance{WA_ID_INSTANCE}/sendFileByUpload/{WA_API_TOKEN}"
+    
+    form = aiohttp.FormData()
+    form.add_field('chatId', chat_id)
+    form.add_field('caption', caption)
+    form.add_field('fileName', filename)
+    form.add_field('file', file_bytes, filename=filename, content_type='application/pdf')
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=form) as resp:
+            result = await resp.json()
+            print(f"📎 Envoi fichier WA → {phone} | Statut: {resp.status} | {result}")
+            return result
 
 async def gemini_generate(prompt_or_contents, system_instruction: str = None, is_wa: bool = False) -> str:
     """Génère du contenu avec rotation automatique des modèles en cas de quota 429."""
@@ -445,6 +621,33 @@ async def poll_whatsapp_messages():
                                 reply = reply.replace("[LIEN_CALENDLY]", f"\n\n📅 *Prendre Rendez-vous avec Dieylany* : {calendar_link}")
                                 reply = reply.strip()
                             
+                            # Interception de la balise [DEVIS:Service:Montant]
+                            import re as _re
+                            devis_match = _re.search(r'\[DEVIS:([^:]+):(\d+)\]', reply)
+                            if devis_match:
+                                devis_service = devis_match.group(1).strip()
+                                devis_montant = devis_match.group(2).strip()
+                                reply = reply.replace(devis_match.group(0), "").strip()
+                                
+                                try:
+                                    pdf_bytes = generate_devis_pdf(
+                                        client_phone=phone,
+                                        service=devis_service,
+                                        montant=devis_montant,
+                                        client_name=name
+                                    )
+                                    filename = f"Devis_SDS_{datetime.now().strftime('%Y%m%d')}_{phone[-4:]}.pdf"
+                                    caption = f"📄 Voici votre devis pour *{devis_service}* — {int(devis_montant):,} FCFA".replace(',', ' ')
+                                    await send_whatsapp_file(phone, pdf_bytes, filename, caption)
+                                    print(f"📎 Devis PDF généré et envoyé à {phone} ({devis_service} — {devis_montant} FCFA)")
+                                    
+                                    if WA_LOG_CHANNEL:
+                                        channel = bot.get_channel(WA_LOG_CHANNEL)
+                                        if channel:
+                                            await channel.send(f"📄 **Devis PDF envoyé !**\n👤 Client : `{name}` (+{phone})\n🛒 Service : {devis_service}\n💰 Montant : {int(devis_montant):,} FCFA".replace(',', ' '))
+                                except Exception as pdf_err:
+                                    print(f"⚠️ Erreur génération PDF : {pdf_err}")
+
                             # Délai artificiel pour humaniser Max (simule le temps de frappe)
                             delay = max(2.0, min(6.0, len(reply) * 0.04))
                             await asyncio.sleep(delay)
