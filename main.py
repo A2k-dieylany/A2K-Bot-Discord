@@ -685,9 +685,9 @@ async def poll_whatsapp_messages():
                             # Détection de fin de discussion
                             import re
                             is_finished = False
-                            if re.search(r'\[(?i)FIN_DISCUSSION\]', reply):
+                            if re.search(r'(?i)\[FIN_DISCUSSION\]', reply):
                                 is_finished = True
-                                reply = re.sub(r'\[(?i)FIN_DISCUSSION\]', '', reply).strip()
+                                reply = re.sub(r'(?i)\[FIN_DISCUSSION\]', '', reply).strip()
                                 
                             # Enregistrer le statut de relance pour ce client
                             new_status = 'finished' if is_finished else 'pending'
@@ -764,9 +764,9 @@ async def poll_whatsapp_messages():
 
                             # Interception de la balise VOCAL
                             is_vocal = False
-                            if re.search(r'\[(?i)VOCAL\]', reply):
+                            if re.search(r'(?i)\[VOCAL\]', reply):
                                 is_vocal = True
-                                reply = re.sub(r'\[(?i)VOCAL\]', '', reply).strip()
+                                reply = re.sub(r'(?i)\[VOCAL\]', '', reply).strip()
 
                             # Délai artificiel pour humaniser Max (simule le temps de frappe)
                             delay = max(2.0, min(6.0, len(reply) * 0.04))
