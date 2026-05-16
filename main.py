@@ -373,9 +373,13 @@ async def poll_whatsapp_messages():
                             
                             # Détection prospect chaud
                             is_hot = False
+                            needs_human = False
                             if "[ALERTE_PROSPECT]" in reply:
                                 is_hot = True
                                 reply = reply.replace("[ALERTE_PROSPECT]", "").strip()
+                            if "[ALERTE_HUMAIN]" in reply:
+                                needs_human = True
+                                reply = reply.replace("[ALERTE_HUMAIN]", "").strip()
                                 
                             # Interception de la balise de paiement
                             import re
@@ -404,15 +408,21 @@ async def poll_whatsapp_messages():
                                 channel = bot.get_channel(WA_LOG_CHANNEL)
                                 if channel:
                                     embed = discord.Embed(
-                                        title="🔥 PROSPECT CHAUD ! Action requise" if is_hot else "📱 Nouveau message WhatsApp",
-                                        color=0xFF4500 if is_hot else 0x25D366
+                                        title="🔥 PROSPECT CHAUD ! Action requise" if is_hot else ("🗣️ Demande d'Humain" if needs_human else "📱 Nouveau message WhatsApp"),
+                                        color=0xFF4500 if is_hot else (0xF59E0B if needs_human else 0x25D366)
                                     )
                                     embed.add_field(name="👤 De", value=f"{name} (`{phone}`)", inline=False)
                                     embed.add_field(name="💬 Message client", value=text if text else "(Fichier/Image envoyé)", inline=False)
                                     embed.add_field(name="🤖 Réponse Max", value=reply, inline=False)
                                     embed.timestamp = datetime.now()
-                                    content = "@everyone 🚨 **Dieylany, un prospect t'attend sur WhatsApp !**" if is_hot else None
+                                    content = "@everyone 🚨 **Dieylany, un prospect t'attend sur WhatsApp !**" if (is_hot or needs_human) else None
                                     await channel.send(content=content, embed=embed)
+                                    
+                            # Notifier sur WhatsApp Perso si urgent
+                            if (is_hot or needs_human) and ADMIN_PHONE:
+                                type_alerte = "PROSPECT CHAUD" if is_hot else "DEMANDE D'HUMAIN"
+                                admin_msg = f"🚨 *ALERTE {type_alerte}* 🚨\n\n👤 Client : +{phone}\n💬 Il a dit : {text}\n🤖 Max : {reply}\n\nVa vite sur le dashboard ou réponds depuis ton WhatsApp professionnel !"
+                                await send_whatsapp(ADMIN_PHONE, admin_msg)
 
                     # Supprimer la notification traitée
                     async with session.delete(f"{delete_url}/{receipt_id}") as _:
@@ -659,6 +669,11 @@ async def process_payment(request: web.Request) -> web.Response:
                 embed.add_field(name="💳 Moyen", value=method, inline=True)
                 await channel.send("@everyone 💸 **Cha-Ching !**", embed=embed)
                 
+        # Notifier sur WhatsApp perso
+        if ADMIN_PHONE:
+            admin_msg = f"💸 *NOUVEAU PAIEMENT !* 💸\n\n👤 Client : +{phone}\n💰 Montant : {amount} FCFA\n💳 Moyen : {method}"
+            await send_whatsapp(ADMIN_PHONE, admin_msg)
+                
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -786,6 +801,10 @@ async def book_meeting(request: web.Request) -> web.Response:
                 embed.add_field(name="⏰ Heure", value=time, inline=True)
                 await channel.send("@everyone 📅 **Nouveau call booké ! Prépare tes notes.**", embed=embed)
                 
+        if ADMIN_PHONE:
+            admin_msg = f"📅 *NOUVEAU RENDEZ-VOUS* 📅\n\n👤 Client : +{phone}\n📆 Date : {date}\n⏰ Heure : {time}\n\nC'est noté dans l'agenda ! 👋"
+            await send_whatsapp(ADMIN_PHONE, admin_msg)
+                
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -825,6 +844,10 @@ async def handle_form_notification(request: web.Request) -> web.Response:
                 embed.add_field(name="💬 Message envoyé", value=message, inline=False)
                 embed.timestamp = datetime.now()
                 await channel.send(embed=embed)
+                
+        if ADMIN_PHONE:
+            admin_msg = f"📋 *NOUVEAU LEAD WEB* 📋\n\n👤 Nom : {name}\n📱 Tél : +{phone}\n💬 Message : {message}\n\nL'IA a répondu au client pour l'accueillir."
+            await send_whatsapp(ADMIN_PHONE, admin_msg)
 
         return web.json_response({"success": True, "message_sent": message})
 
