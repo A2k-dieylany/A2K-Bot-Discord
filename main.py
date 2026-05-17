@@ -656,6 +656,11 @@ async def poll_whatsapp_messages():
                     receipt_id = data["receiptId"]
                     body = data["body"]
 
+                    # SUPPRESSION IMMÉDIATE pour éviter le double-traitement
+                    # (avant le traitement IA qui peut prendre 5-10 sec)
+                    async with session.delete(f"{delete_url}/{receipt_id}") as _:
+                        pass
+
                     # Traiter les messages textes, images, et vocaux
                     type_msg = body.get("messageData", {}).get("typeMessage")
                     if body.get("typeWebhook") == "incomingMessageReceived" and type_msg in ["textMessage", "imageMessage", "audioMessage", "pttMessage"]:
@@ -844,9 +849,7 @@ async def poll_whatsapp_messages():
                                 admin_msg = f"🚨 *ALERTE {type_alerte}* 🚨\n\n👤 Client : +{phone}\n💬 Il a dit : {text}\n🤖 Max : {reply}\n\nVa vite sur le dashboard ou réponds depuis ton WhatsApp professionnel !"
                                 await send_whatsapp(ADMIN_PHONE, admin_msg)
 
-                    # Supprimer la notification traitée
-                    async with session.delete(f"{delete_url}/{receipt_id}") as _:
-                        pass
+                    # Notification déjà supprimée en amont (ligne 660+)
 
             except Exception as e:
                 print(f"⚠️ Erreur polling WA : {e}")
