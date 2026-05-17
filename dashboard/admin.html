@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BotSaaS — Admin Control Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #070d1a;
+            --surface: rgba(15, 25, 50, 0.8);
+            --surface-alt: rgba(20, 35, 65, 0.6);
+            --border: rgba(99, 160, 255, 0.15);
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --green: #10b981;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --text: #e2e8f0;
+            --muted: #64748b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            background-image:
+                radial-gradient(ellipse at 20% 10%, rgba(59,130,246,0.12) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 90%, rgba(16,185,129,0.08) 0%, transparent 50%);
+        }
+
+        /* ── Header ─────────────────────────────── */
+        .header {
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .logo {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, var(--accent), #06b6d4);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+        }
+        .header h1 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; }
+        .header h1 span { color: var(--accent); }
+        .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .btn { padding: 9px 18px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; font-family: 'Inter'; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: #2563eb; transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }
+        .btn-danger { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+        .btn-danger:hover { background: rgba(239,68,68,0.25); }
+        .btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+
+        /* ── Layout ─────────────────────────────── */
+        .main { display: grid; grid-template-columns: 1fr; gap: 24px; padding: 28px 32px; max-width: 1400px; margin: auto; }
+
+        /* ── Stats Row ────────────────────────────── */
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px 22px;
+            backdrop-filter: blur(12px);
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-label { font-size: 0.78rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-value { font-size: 2rem; font-weight: 800; letter-spacing: -1px; }
+        .stat-sub { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+        .green { color: var(--green); }
+        .red { color: var(--red); }
+        .yellow { color: var(--yellow); }
+        .blue { color: var(--accent); }
+
+        /* ── Section ─────────────────────────────── */
+        .section { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; backdrop-filter: blur(12px); overflow: hidden; }
+        .section-header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+        .section-header h2 { font-size: 1rem; font-weight: 600; flex: 1; }
+
+        /* ── Table ─────────────────────────────── */
+        table { width: 100%; border-collapse: collapse; }
+        th { padding: 12px 20px; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; text-align: left; border-bottom: 1px solid var(--border); }
+        td { padding: 14px 20px; font-size: 0.88rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        tr:last-child td { border-bottom: none; }
+
+        /* ── Badges ─────────────────────────────── */
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; }
+        .badge-green { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+        .badge-red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+        .badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+        .badge-blue { background: rgba(59,130,246,0.15); color: var(--accent); border: 1px solid rgba(59,130,246,0.3); }
+
+        /* ── Modal ─────────────────────────────── */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #0f1e3a; border: 1px solid var(--border); border-radius: 20px; padding: 32px; width: 100%; max-width: 520px; animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        .modal h2 { font-size: 1.3rem; margin-bottom: 24px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 0.82rem; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%; padding: 11px 14px; border-radius: 9px;
+            border: 1px solid var(--border); background: rgba(0,0,0,0.3);
+            color: var(--text); font-family: 'Inter'; font-size: 0.88rem;
+            outline: none; transition: border 0.2s;
+        }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: var(--accent); }
+        .form-group textarea { height: 80px; resize: vertical; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .modal-footer { display: flex; gap: 10px; margin-top: 20px; }
+        .modal-footer .btn { flex: 1; padding: 12px; }
+        .btn-cancel { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+        .btn-cancel:hover { background: rgba(255,255,255,0.08); }
+
+        /* ── Empty State ─────────────────────────── */
+        .empty-state { padding: 60px; text-align: center; color: var(--muted); }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state p { font-size: 0.95rem; }
+
+        /* ── Toast ─────────────────────────────── */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px;
+            padding: 12px 20px; border-radius: 10px; font-size: 0.88rem; font-weight: 500;
+            z-index: 9999; animation: fadeInUp 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        .toast-success { background: rgba(16,185,129,0.9); color: white; }
+        .toast-error { background: rgba(239,68,68,0.9); color: white; }
+
+        /* ── Auth Overlay ─────────────────────────── */
+        .auth-overlay {
+            position: fixed; inset: 0;
+            background: var(--bg);
+            z-index: 9000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .auth-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 40px;
+            width: 360px;
+            text-align: center;
+        }
+        .auth-box .logo { margin: 0 auto 20px; }
+        .auth-box h2 { font-size: 1.4rem; margin-bottom: 8px; }
+        .auth-box p { font-size: 0.85rem; color: var(--muted); margin-bottom: 24px; }
+        .auth-input { width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: var(--text); font-size: 1rem; font-family:'Inter'; outline:none; text-align:center; letter-spacing: 4px; }
+        .auth-input:focus { border-color: var(--accent); }
+        .auth-btn { margin-top: 16px; width: 100%; padding: 13px; background: var(--accent); color: white; border-radius: 10px; border: none; font-size: 1rem; font-weight: 600; cursor: pointer; font-family: 'Inter'; transition: background 0.2s; }
+        .auth-btn:hover { background: #2563eb; }
+    </style>
+</head>
+<body>
+
+<!-- ── Auth Overlay ─────────────────────────────────────────── -->
+<div class="auth-overlay" id="auth-overlay">
+    <div class="auth-box">
+        <div class="logo">🤖</div>
+        <h2>BotSaaS Admin</h2>
+        <p>Entrez votre clé secrète d'administration</p>
+        <input class="auth-input" type="password" id="auth-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')authLogin()">
+        <button class="auth-btn" onclick="authLogin()">Accéder au Panel</button>
+    </div>
+</div>
+
+<!-- ── Header ─────────────────────────────────────────────────── -->
+<div class="header">
+    <div class="logo">🤖</div>
+    <h1>Bot<span>SaaS</span> Admin</h1>
+    <div class="header-right">
+        <div class="status-dot"></div>
+        <span style="font-size:0.82rem;color:var(--muted)">Système opérationnel</span>
+        <button class="btn btn-primary" onclick="openModal()">+ Nouveau Client</button>
+    </div>
+</div>
+
+<!-- ── Main ─────────────────────────────────────────────────────── -->
+<div class="main">
+    <!-- Stats -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-label">Clients actifs</div>
+            <div class="stat-value blue" id="stat-total">—</div>
+            <div class="stat-sub">Bots déployés</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Bots en ligne</div>
+            <div class="stat-value green" id="stat-online">—</div>
+            <div class="stat-sub">Processus PM2 actifs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Bots hors ligne</div>
+            <div class="stat-value red" id="stat-offline">—</div>
+            <div class="stat-sub">Nécessitent attention</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Revenus estimés</div>
+            <div class="stat-value yellow" id="stat-revenue">—</div>
+            <div class="stat-sub">FCFA / mois</div>
+        </div>
+    </div>
+
+    <!-- Tableau des Tenants -->
+    <div class="section">
+        <div class="section-header">
+            <span>🏢</span>
+            <h2>Clients & Bots Déployés</h2>
+            <button class="btn btn-primary btn-sm" onclick="loadTenants()">🔄 Rafraîchir</button>
+        </div>
+        <div id="tenants-container">
+            <div class="empty-state">
+                <div class="icon">⏳</div>
+                <p>Chargement des données...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Modal Nouveau Client ─────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <h2>🚀 Déployer un Nouveau Bot</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Nom de l'entreprise *</label>
+                <input type="text" id="f-name" placeholder="Ex: Boulangerie Paul">
+            </div>
+            <div class="form-group">
+                <label>Numéro Admin WhatsApp *</label>
+                <input type="text" id="f-phone" placeholder="221770000000">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Description (Connaissances du bot) *</label>
+            <textarea id="f-info" placeholder="Décrivez les services, produits, horaires..."></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Green API — ID Instance *</label>
+                <input type="text" id="f-wa-instance" placeholder="7103847592">
+            </div>
+            <div class="form-group">
+                <label>Green API — Token *</label>
+                <input type="password" id="f-wa-token" placeholder="••••••••">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Plan</label>
+                <select id="f-plan">
+                    <option value="trial">Essai Gratuit (14j)</option>
+                    <option value="starter" selected>Starter — 25 000 FCFA</option>
+                    <option value="business">Business — 45 000 FCFA</option>
+                    <option value="pro">Pro — 80 000 FCFA</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Port HTTP (unique)</label>
+                <input type="number" id="f-port" value="8081" min="8081" max="9999">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-cancel" onclick="closeModal()">Annuler</button>
+            <button class="btn btn-primary" onclick="createTenant()">🚀 Déployer le Bot</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "";  // Même origine
+    let AUTH_TOKEN = localStorage.getItem("admin_token") || "";
+
+    // ── Auth ───────────────────────────────────────────────────────
+    function authLogin() {
+        const token = document.getElementById("auth-input").value.trim();
+        if (!token) return;
+        AUTH_TOKEN = token;
+        localStorage.setItem("admin_token", token);
+        document.getElementById("auth-overlay").style.display = "none";
+        loadTenants();
+    }
+
+    // Auto-login si token sauvegardé
+    if (AUTH_TOKEN) {
+        document.getElementById("auth-overlay").style.display = "none";
+        loadTenants();
+    }
+
+    // ── API Helper ────────────────────────────────────────────────
+    async function apiFetch(path, options = {}) {
+        const res = await fetch(API_BASE + path, {
+            ...options,
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${AUTH_TOKEN}`,
+                ...(options.headers || {})
+            }
+        });
+        if (res.status === 401) {
+            localStorage.removeItem("admin_token");
+            document.getElementById("auth-overlay").style.display = "flex";
+            throw new Error("Non autorisé");
+        }
+        return res.json();
+    }
+
+    // ── Tenants ────────────────────────────────────────────────────
+    const PLAN_PRICES = { trial: 0, starter: 25000, business: 45000, pro: 80000 };
+
+    async function loadTenants() {
+        try {
+            const data = await apiFetch("/api/v1/tenants");
+            const tenants = data.tenants || [];
+
+            // Mise à jour stats
+            const online = tenants.filter(t => t.bot_status === "online").length;
+            const revenue = tenants.reduce((sum, t) => sum + (PLAN_PRICES[t.plan] || 0), 0);
+            document.getElementById("stat-total").textContent = tenants.length;
+            document.getElementById("stat-online").textContent = online;
+            document.getElementById("stat-offline").textContent = tenants.length - online;
+            document.getElementById("stat-revenue").textContent = revenue.toLocaleString("fr-FR");
+
+            // Tableau
+            const container = document.getElementById("tenants-container");
+            if (tenants.length === 0) {
+                container.innerHTML = `<div class="empty-state"><div class="icon">🤖</div><p>Aucun client déployé. Cliquez sur "+ Nouveau Client" pour commencer !</p></div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <table>
+                    <thead><tr>
+                        <th>Entreprise</th><th>Statut Bot</th><th>Plan</th>
+                        <th>Port</th><th>CPU</th><th>RAM</th><th>Actions</th>
+                    </tr></thead>
+                    <tbody>
+                        ${tenants.map(t => `
+                            <tr>
+                                <td>
+                                    <strong>${t.name}</strong><br>
+                                    <span style="color:var(--muted);font-size:0.75rem">${t.id}</span>
+                                </td>
+                                <td>${statusBadge(t.bot_status)}</td>
+                                <td>${planBadge(t.plan)}</td>
+                                <td><code style="background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px">:${t.port}</code></td>
+                                <td>${t.cpu || 0}%</td>
+                                <td>${t.memory_mb || 0} Mo</td>
+                                <td>
+                                    <button class="btn btn-sm" style="background:rgba(59,130,246,0.1);color:var(--accent);border:1px solid rgba(59,130,246,0.3);margin-right:6px" onclick="restartBot('${t.id}')">↻ Restart</button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteBot('${t.id}', '${t.name}')">✕</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        } catch (e) {
+            if (e.message !== "Non autorisé") showToast("Erreur de chargement. Vérifiez que l'orchestrateur est lancé.", "error");
+        }
+    }
+
+    function statusBadge(status) {
+        const map = {
+            online: '<span class="badge badge-green">● En ligne</span>',
+            offline: '<span class="badge badge-red">● Hors ligne</span>',
+            stopped: '<span class="badge badge-yellow">● Arrêté</span>',
+        };
+        return map[status] || `<span class="badge">${status}</span>`;
+    }
+
+    function planBadge(plan) {
+        const map = {
+            trial: '<span class="badge badge-yellow">Essai</span>',
+            starter: '<span class="badge badge-blue">Starter</span>',
+            business: '<span class="badge badge-green">Business</span>',
+            pro: '<span class="badge" style="background:rgba(168,85,247,0.15);color:#a855f7;border:1px solid rgba(168,85,247,0.3)">Pro</span>',
+        };
+        return map[plan] || plan;
+    }
+
+    // ── Actions ────────────────────────────────────────────────────
+    async function restartBot(tenantId) {
+        try {
+            await apiFetch(`/api/v1/tenants/${tenantId}/restart`, { method: "POST" });
+            showToast("Bot redémarré avec succès !", "success");
+            setTimeout(loadTenants, 2000);
+        } catch { showToast("Erreur lors du redémarrage.", "error"); }
+    }
+
+    async function deleteBot(tenantId, name) {
+        if (!confirm(`⚠️ Supprimer définitivement le bot de "${name}" et TOUTES ses données ?`)) return;
+        try {
+            await apiFetch(`/api/v1/tenants/${tenantId}`, { method: "DELETE" });
+            showToast("Client supprimé.", "success");
+            loadTenants();
+        } catch { showToast("Erreur lors de la suppression.", "error"); }
+    }
+
+    // ── Création Tenant ────────────────────────────────────────────
+    async function createTenant() {
+        const payload = {
+            name: document.getElementById("f-name").value.trim(),
+            business_info: document.getElementById("f-info").value.trim(),
+            admin_phone: document.getElementById("f-phone").value.trim(),
+            wa_instance: document.getElementById("f-wa-instance").value.trim(),
+            wa_token: document.getElementById("f-wa-token").value.trim(),
+            plan: document.getElementById("f-plan").value,
+            port: parseInt(document.getElementById("f-port").value),
+        };
+
+        if (!payload.name || !payload.business_info || !payload.admin_phone || !payload.wa_instance || !payload.wa_token) {
+            showToast("Tous les champs obligatoires (*) doivent être remplis.", "error");
+            return;
+        }
+
+        try {
+            const res = await apiFetch("/api/v1/tenants", {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            closeModal();
+            showToast(`🚀 Bot "${payload.name}" déployé !`, "success");
+            loadTenants();
+            // Afficher l'URL du webhook
+            alert(`✅ Bot déployé avec succès !\n\n👉 URL Webhook à configurer dans GreenAPI :\n${window.location.hostname}:${payload.port}/notify`);
+        } catch (e) {
+            showToast("Erreur lors du déploiement. Vérifiez les informations.", "error");
+        }
+    }
+
+    // ── Modal ─────────────────────────────────────────────────────
+    function openModal() { document.getElementById("modal-overlay").classList.add("open"); }
+    function closeModal() { document.getElementById("modal-overlay").classList.remove("open"); }
+    document.getElementById("modal-overlay").addEventListener("click", (e) => {
+        if (e.target === document.getElementById("modal-overlay")) closeModal();
+    });
+
+    // ── Toast ─────────────────────────────────────────────────────
+    function showToast(msg, type = "success") {
+        const t = document.createElement("div");
+        t.className = `toast toast-${type}`;
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 4000);
+    }
+
+    // Auto-refresh toutes les 30s
+    setInterval(loadTenants, 30000);
+</script>
+</body>
+</html>
