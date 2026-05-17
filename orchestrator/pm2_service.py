@@ -34,17 +34,24 @@ class PM2Service:
 
     async def _run(self, *args: str) -> tuple[int, str, str]:
         """Exécute une commande shell async et retourne (returncode, stdout, stderr)."""
+        import sys
+        
+        # Sur Windows, pm2 est un .cmd, subprocess.exec a besoin du nom exact sans shell=True
+        cmd_args = list(args)
+        if cmd_args[0] == "pm2" and sys.platform == "win32":
+            cmd_args[0] = "pm2.cmd"
+            
         try:
             proc = await asyncio.create_subprocess_exec(
-                *args,
+                *cmd_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await proc.communicate()
             return proc.returncode, stdout.decode(), stderr.decode()
         except FileNotFoundError:
-            logger.warning(f"Commande introuvable: {args[0]}. PM2 est-il installe ?")
-            return 1, "", f"Command not found: {args[0]}"
+            logger.warning(f"Commande introuvable: {cmd_args[0]}. PM2 est-il installe ?")
+            return 1, "", f"Command not found: {cmd_args[0]}"
 
     def _get_client_dir(self, tenant_id: str) -> Path:
         """Retourne le répertoire dédié à ce client, le crée si nécessaire."""
@@ -88,11 +95,13 @@ class PM2Service:
         Génère le fichier ecosystem.config.js pour PM2.
         Ce format est celui que PM2 utilise pour gérer les processus de façon robuste.
         """
+        import sys
         client_dir = self._get_client_dir(tenant_id)
         ecosystem = {
             "apps": [{
                 "name": f"bot_{tenant_id}",
                 "script": str(BOT_ENTRY_POINT.resolve()),
+                "interpreter": sys.executable,
                 "cwd": str(client_dir),
                 "env_file": str(client_dir / ".env"),
                 "watch": False,
@@ -127,7 +136,7 @@ class PM2Service:
 
         # 2. Lancer via PM2
         returncode, stdout, stderr = await self._run(
-            "pm2", "start", str(eco_path), "--no-daemon"
+            "pm2", "start", str(eco_path)
         )
         if returncode != 0:
             logger.error(f"❌ Échec démarrage PM2 pour {tenant_id}: {stderr}")
