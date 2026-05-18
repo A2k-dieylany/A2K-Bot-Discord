@@ -317,7 +317,12 @@
             document.getElementById("auth-overlay").style.display = "flex";
             throw new Error("Non autorisé");
         }
-        return res.json();
+        
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Erreur serveur");
+        }
+        return data;
     }
 
     // ── Tenants ────────────────────────────────────────────────────
@@ -401,7 +406,7 @@
             await apiFetch(`/api/v1/tenants/${tenantId}/restart`, { method: "POST" });
             showToast("Bot redémarré avec succès !", "success");
             setTimeout(loadTenants, 2000);
-        } catch { showToast("Erreur lors du redémarrage.", "error"); }
+        } catch(e) { showToast(e.message, "error"); }
     }
 
     async function stopBot(tenantId) {
@@ -410,7 +415,7 @@
             await apiFetch(`/api/v1/tenants/${tenantId}/stop`, { method: "POST" });
             showToast("Bot suspendu.", "yellow");
             setTimeout(loadTenants, 2000);
-        } catch { showToast("Erreur lors de l'arrêt.", "error"); }
+        } catch(e) { showToast(e.message, "error"); }
     }
 
     async function deleteBot(tenantId, name) {
@@ -419,7 +424,7 @@
             await apiFetch(`/api/v1/tenants/${tenantId}`, { method: "DELETE" });
             showToast("Client supprimé.", "success");
             loadTenants();
-        } catch { showToast("Erreur lors de la suppression.", "error"); }
+        } catch(e) { showToast(e.message, "error"); }
     }
 
     // ── Création / Édition Tenant ──────────────────────────────────
@@ -459,7 +464,7 @@
                 alert(`✅ Bot déployé avec succès !\n\n👉 URL Webhook à configurer dans GreenAPI :\n${window.location.hostname}:${payload.port}/notify`);
             }
         } catch (e) {
-            showToast("Erreur lors de l'enregistrement. Vérifiez les informations.", "error");
+            showToast(e.message, "error");
         }
     }
 

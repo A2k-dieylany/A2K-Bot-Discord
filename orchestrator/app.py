@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
+import aiohttp
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -69,6 +70,15 @@ def verify_admin(request: Request):
         )
     return True
 
+async def verify_green_api(instance_id: str, token: str) -> bool:
+    """Vérifie si les identifiants Green API sont valides (renvoient 200)."""
+    url = f"https://api.green-api.com/waInstance{instance_id}/getStateInstance/{token}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as resp:
+                return resp.status == 200
+    except Exception:
+        return False
 
 # ── Schémas Pydantic (Validation des Données) ────────────────────────────────
 class CreateTenantRequest(BaseModel):
@@ -131,6 +141,14 @@ async def create_tenant(payload: CreateTenantRequest, auth=Depends(verify_admin)
         raise HTTPException(
             status_code=400,
             detail=f"Le port {payload.port} est déjà utilisé par un autre bot. Choisissez un port différent."
+        )
+
+    # Validation Green API
+    is_valid = await verify_green_api(payload.wa_instance, payload.wa_token)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="Identifiants Green API invalides (Instance ou Token incorrect)."
         )
 
     try:
@@ -202,9 +220,8 @@ async def restart_bot(tenant_id: str, auth=Depends(verify_admin)):
 @app.post("/api/v1/tenants/{tenant_id}/stop", tags=["Admin"])
 async def stop_bot(tenant_id: str, auth=Depends(verify_admin)):
     """Arrête le bot d'un client (suspension)."""
-    ok = await pm2_service.stop(tenant_id)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Impossible d'arrêter le bot.")
+    await pm2_service.stop(tenant_id)
+    # Même si le stop PM2 échoue (car process n'existe plus), on met à jour la base
     tenant_repo.update_status(tenant_id, "suspended")
     return {"message": f"Bot {tenant_id} arrêté et suspendu."}
 
@@ -217,6 +234,14 @@ async def update_tenant_data(tenant_id: str, payload: UpdateTenantDataRequest, a
         raise HTTPException(
             status_code=400,
             detail=f"Le port {payload.port} est déjà utilisé."
+        )
+
+    # Validation Green API
+    is_valid = await verify_green_api(payload.wa_instance, payload.wa_token)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="Identifiants Green API invalides."
         )
 
     tenant_repo.update(
