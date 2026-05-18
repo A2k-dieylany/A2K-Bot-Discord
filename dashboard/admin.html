@@ -275,7 +275,7 @@
         </div>
         <div class="modal-footer">
             <button class="btn btn-cancel" onclick="closeModal()">Annuler</button>
-            <button class="btn btn-primary" onclick="createTenant()">🚀 Déployer le Bot</button>
+            <button class="btn btn-primary" id="btn-save-modal" onclick="saveTenant()">🚀 Déployer le Bot</button>
         </div>
     </div>
 </div>
@@ -283,6 +283,8 @@
 <script>
     const API_BASE = "";  // Même origine
     let AUTH_TOKEN = localStorage.getItem("admin_token") || "";
+    let editMode = false;
+    let currentEditId = null;
 
     // ── Auth ───────────────────────────────────────────────────────
     function authLogin() {
@@ -360,7 +362,9 @@
                                 <td>${t.cpu || 0}%</td>
                                 <td>${t.memory_mb || 0} Mo</td>
                                 <td>
-                                    <button class="btn btn-sm" style="background:rgba(59,130,246,0.1);color:var(--accent);border:1px solid rgba(59,130,246,0.3);margin-right:6px" onclick="restartBot('${t.id}')">↻ Restart</button>
+                                    <button class="btn btn-sm" style="background:rgba(59,130,246,0.1);color:var(--accent);border:1px solid rgba(59,130,246,0.3);margin-right:6px" onclick="openEditModal('${t.id}')">✏️ Edit</button>
+                                    <button class="btn btn-sm" style="background:rgba(16,185,129,0.1);color:var(--green);border:1px solid rgba(16,185,129,0.3);margin-right:6px" onclick="restartBot('${t.id}')">↻ Restart</button>
+                                    <button class="btn btn-sm" style="background:rgba(245,158,11,0.1);color:var(--yellow);border:1px solid rgba(245,158,11,0.3);margin-right:6px" onclick="stopBot('${t.id}')">⏸ Stop</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteBot('${t.id}', '${t.name}')">✕</button>
                                 </td>
                             </tr>
@@ -400,6 +404,15 @@
         } catch { showToast("Erreur lors du redémarrage.", "error"); }
     }
 
+    async function stopBot(tenantId) {
+        if (!confirm("Voulez-vous suspendre ce bot ? Il ne répondra plus aux clients.")) return;
+        try {
+            await apiFetch(`/api/v1/tenants/${tenantId}/stop`, { method: "POST" });
+            showToast("Bot suspendu.", "yellow");
+            setTimeout(loadTenants, 2000);
+        } catch { showToast("Erreur lors de l'arrêt.", "error"); }
+    }
+
     async function deleteBot(tenantId, name) {
         if (!confirm(`⚠️ Supprimer définitivement le bot de "${name}" et TOUTES ses données ?`)) return;
         try {
@@ -409,8 +422,8 @@
         } catch { showToast("Erreur lors de la suppression.", "error"); }
     }
 
-    // ── Création Tenant ────────────────────────────────────────────
-    async function createTenant() {
+    // ── Création / Édition Tenant ──────────────────────────────────
+    async function saveTenant() {
         const payload = {
             name: document.getElementById("f-name").value.trim(),
             business_info: document.getElementById("f-info").value.trim(),
@@ -427,22 +440,64 @@
         }
 
         try {
-            const res = await apiFetch("/api/v1/tenants", {
-                method: "POST",
-                body: JSON.stringify(payload)
-            });
-            closeModal();
-            showToast(`🚀 Bot "${payload.name}" déployé !`, "success");
-            loadTenants();
-            // Afficher l'URL du webhook
-            alert(`✅ Bot déployé avec succès !\n\n👉 URL Webhook à configurer dans GreenAPI :\n${window.location.hostname}:${payload.port}/notify`);
+            if (editMode) {
+                await apiFetch(`/api/v1/tenants/${currentEditId}`, {
+                    method: "PUT",
+                    body: JSON.stringify(payload)
+                });
+                closeModal();
+                showToast(`✅ Bot "${payload.name}" mis à jour !`, "success");
+                loadTenants();
+            } else {
+                const res = await apiFetch("/api/v1/tenants", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+                closeModal();
+                showToast(`🚀 Bot "${payload.name}" déployé !`, "success");
+                loadTenants();
+                alert(`✅ Bot déployé avec succès !\n\n👉 URL Webhook à configurer dans GreenAPI :\n${window.location.hostname}:${payload.port}/notify`);
+            }
         } catch (e) {
-            showToast("Erreur lors du déploiement. Vérifiez les informations.", "error");
+            showToast("Erreur lors de l'enregistrement. Vérifiez les informations.", "error");
         }
     }
 
     // ── Modal ─────────────────────────────────────────────────────
-    function openModal() { document.getElementById("modal-overlay").classList.add("open"); }
+    function openModal() { 
+        editMode = false;
+        currentEditId = null;
+        document.getElementById("f-name").value = "";
+        document.getElementById("f-info").value = "";
+        document.getElementById("f-phone").value = "";
+        document.getElementById("f-wa-instance").value = "";
+        document.getElementById("f-wa-token").value = "";
+        document.getElementById("f-port").value = "8081";
+        document.getElementById("btn-save-modal").textContent = "🚀 Déployer le Bot";
+        document.querySelector(".modal h2").textContent = "🚀 Déployer un Nouveau Bot";
+        document.getElementById("modal-overlay").classList.add("open"); 
+    }
+
+    async function openEditModal(tenantId) {
+        try {
+            const tenant = await apiFetch(`/api/v1/tenants/${tenantId}`);
+            editMode = true;
+            currentEditId = tenantId;
+            document.getElementById("f-name").value = tenant.name;
+            document.getElementById("f-info").value = tenant.business_info;
+            document.getElementById("f-phone").value = tenant.admin_phone;
+            document.getElementById("f-wa-instance").value = tenant.wa_instance;
+            document.getElementById("f-wa-token").value = tenant.wa_token;
+            document.getElementById("f-plan").value = tenant.plan;
+            document.getElementById("f-port").value = tenant.port;
+            
+            document.getElementById("btn-save-modal").textContent = "💾 Sauvegarder";
+            document.querySelector(".modal h2").textContent = "✏️ Modifier le Bot";
+            document.getElementById("modal-overlay").classList.add("open");
+        } catch (e) {
+            showToast("Erreur récupération infos client", "error");
+        }
+    }
     function closeModal() { document.getElementById("modal-overlay").classList.remove("open"); }
     document.getElementById("modal-overlay").addEventListener("click", (e) => {
         if (e.target === document.getElementById("modal-overlay")) closeModal();

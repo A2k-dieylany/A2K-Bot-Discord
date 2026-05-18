@@ -85,6 +85,14 @@ class UpdateTenantRequest(BaseModel):
     status: Optional[str] = Field(None, pattern=r"^(trial|active|suspended|cancelled)$")
     plan: Optional[str] = Field(None, pattern=r"^(trial|starter|business|pro)$")
 
+class UpdateTenantDataRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    business_info: str = Field(..., min_length=10)
+    admin_phone: str = Field(..., pattern=r"^\d{10,15}$")
+    wa_instance: str = Field(...)
+    wa_token: str = Field(...)
+    port: int = Field(..., ge=8081, le=9999)
+
 
 # ════════════════════════════════════════════════════════════════
 #  ROUTES ADMIN (Gestion des Tenants)
@@ -190,6 +198,46 @@ async def restart_bot(tenant_id: str, auth=Depends(verify_admin)):
     if not ok:
         raise HTTPException(status_code=500, detail="Impossible de redémarrer le bot.")
     return {"message": f"Bot {tenant_id} redémarré avec succès."}
+
+@app.post("/api/v1/tenants/{tenant_id}/stop", tags=["Admin"])
+async def stop_bot(tenant_id: str, auth=Depends(verify_admin)):
+    """Arrête le bot d'un client (suspension)."""
+    ok = await pm2_service.stop(tenant_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Impossible d'arrêter le bot.")
+    tenant_repo.update_status(tenant_id, "suspended")
+    return {"message": f"Bot {tenant_id} arrêté et suspendu."}
+
+@app.put("/api/v1/tenants/{tenant_id}", tags=["Admin"])
+async def update_tenant_data(tenant_id: str, payload: UpdateTenantDataRequest, auth=Depends(verify_admin)):
+    """Met à jour les infos du client et relance le bot pour appliquer les modifs."""
+    # Vérifier le port
+    all_tenants = tenant_repo.get_all()
+    if any(t.get("port") == payload.port and t.get("id") != tenant_id for t in all_tenants):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Le port {payload.port} est déjà utilisé."
+        )
+
+    tenant_repo.update(
+        tenant_id=tenant_id,
+        name=payload.name,
+        business_info=payload.business_info,
+        admin_phone=payload.admin_phone,
+        wa_instance=payload.wa_instance,
+        wa_token=payload.wa_token,
+        port=payload.port
+    )
+    
+    tenant = tenant_repo.get(tenant_id)
+    # Re-générer les fichiers .env et .json
+    pm2_service._write_env_file(tenant_id, tenant)
+    pm2_service._write_knowledge_file(tenant_id, tenant.get("business_info", ""))
+    
+    # Redémarrer
+    await pm2_service.restart(tenant_id)
+    
+    return {"message": "Client mis à jour et bot redémarré !"}
 
 
 @app.get("/api/v1/tenants/{tenant_id}/logs", tags=["Admin"])

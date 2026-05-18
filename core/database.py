@@ -181,6 +181,24 @@ class TenantRepository:
             del result["gemini_key_enc"]
         return result
 
+    def update(self, tenant_id: str, name: str, business_info: str,
+               admin_phone: str, wa_instance: str, wa_token: str, port: int) -> dict:
+        """Met à jour un client existant."""
+        with db_transaction() as conn:
+            conn.execute("""
+                UPDATE tenants SET 
+                    name = ?, business_info = ?, admin_phone = ?, port = ?,
+                    wa_instance_enc = ?, wa_token_enc = ?
+                WHERE id = ?
+            """, (
+                name, business_info, admin_phone, port,
+                security.encrypt(wa_instance),
+                security.encrypt(wa_token),
+                tenant_id
+            ))
+        self._audit("UPDATE_TENANT", tenant_id, f"Mise à jour client: {name}")
+        return self.get(tenant_id)
+
     def get_all(self) -> list[dict]:
         """Retourne tous les tenants (sans déchiffrer les secrets pour la liste)."""
         conn = get_connection()
