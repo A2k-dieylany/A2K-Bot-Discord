@@ -58,6 +58,7 @@ WA_API_TOKEN   = os.getenv("WA_API_TOKEN")
 
 # ── Canal Discord pour les logs WhatsApp ──────────────────────
 WA_LOG_CHANNEL = int(os.getenv("WA_LOG_CHANNEL", "0"))
+MAKE_WEBHOOK_URL = os.getenv("MAKE_WEBHOOK_URL", "")
 
 # ── Informations Business ──────────────────────────────────────
 BUSINESS_NAME="Sen Digital Solution"
@@ -1437,8 +1438,130 @@ async def on_message(message: discord.Message):
                         await message.channel.send(part)
 
 # ══════════════════════════════════════════════════════════════
+#  SOCIAL MEDIA MANAGER (MAKE.COM)
+# ══════════════════════════════════════════════════════════════
+
+class SocialMediaView(discord.ui.View):
+    def __init__(self, user_id: int, platform: str, topic: str, content: str, image_url: str = None):
+        super().__init__(timeout=86400)
+        self.user_id = user_id
+        self.platform = platform
+        self.topic = topic
+        self.content = content
+        self.image_url = image_url
+
+    @discord.ui.button(label="✅ Publier", style=discord.ButtonStyle.success)
+    async def btn_publish(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Tu n'es pas l'auteur de ce post.", ephemeral=True)
+            return
+            
+        if not MAKE_WEBHOOK_URL:
+            await interaction.response.send_message("❌ Erreur : MAKE_WEBHOOK_URL non configuré dans le .env", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        
+        # Envoi au Webhook Make.com
+        payload = {
+            "platform": self.platform,
+            "topic": self.topic,
+            "content": self.content,
+            "image_url": self.image_url,
+            "author": interaction.user.name
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(MAKE_WEBHOOK_URL, json=payload) as resp:
+                    if resp.status in [200, 201, 202]:
+                        for child in self.children:
+                            child.disabled = True
+                        await interaction.message.edit(view=self)
+                        await interaction.followup.send(f"🚀 **Succès !** Le post a été envoyé à Make.com pour publication sur {self.platform} !")
+                    else:
+                        await interaction.followup.send(f"⚠️ Erreur HTTP {resp.status} depuis Make.com.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erreur de connexion au Webhook : {e}")
+
+    @discord.ui.button(label="🔄 Regénérer", style=discord.ButtonStyle.primary)
+    async def btn_regenerate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Tu n'es pas l'auteur.", ephemeral=True)
+            return
+            
+        await interaction.response.defer()
+        
+        prompt = get_social_media_prompt(self.platform, self.topic)
+        prompt += "\n\n(IMPORTANT: L'utilisateur a demandé une nouvelle version différente de la précédente. Change l'angle d'approche ou le ton.)"
+        
+        new_content = await gemini_generate(prompt)
+        self.content = new_content
+        
+        embed = discord.Embed(title=f"📝 Brouillon {self.platform}", description=new_content, color=0x00A8E8)
+        if self.image_url:
+            embed.set_image(url=self.image_url)
+        
+        await interaction.message.edit(embed=embed, view=self)
+        await interaction.followup.send("🔄 Nouveau brouillon généré !", ephemeral=True)
+
+    @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.danger)
+    async def btn_cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.user_id:
+            await interaction.message.delete()
+        else:
+            await interaction.response.send_message("❌ Tu n'es pas l'auteur.", ephemeral=True)
+
+def get_social_media_prompt(platform: str, topic: str) -> str:
+    base = f"Tu es le Social Media Manager Expert de l'agence {BUSINESS_NAME}. "
+    base += f"Ton objectif est de rédiger un post extrêmement captivant pour {platform} sur le sujet suivant : '{topic}'.\n\n"
+    
+    if platform.lower() == "linkedin":
+        base += "RÈGLES LINKEDIN :\n- Format storytelling professionnel mais direct.\n- Commence par une 'Hook' très forte (une ligne courte qui donne envie de lire la suite).\n- Saute des lignes, aère le texte au maximum.\n- Évite le blabla corporate ennuyeux. Sois punchy.\n- Inclus 3 à 5 emojis maximum (pas trop).\n- Termine par une question ouverte pour générer des commentaires (Call to Action).\n- Ajoute 3-5 hashtags professionnels à la fin."
+    elif platform.lower() == "facebook":
+        base += "RÈGLES FACEBOOK :\n- Ton chaleureux, communautaire, accessible.\n- Cible les PME et entrepreneurs.\n- Commence par accrocher l'attention avec un problème ou une émotion.\n- Le texte peut être un peu plus détendu que sur LinkedIn.\n- N'hésite pas à utiliser des emojis pour dynamiser.\n- Appelle clairement à l'action (ex: 'Contactez-nous' ou 'Lien en commentaire').\n- 2-3 hashtags pertinents à la fin."
+    else:
+        base += "RÈGLES GÉNÉRALES :\n- Fais un post engageant, clair, avec des emojis et des hashtags adaptés."
+        
+    base += "\n\nGénère uniquement le contenu du post (pas d'intro type 'Voici ton post')."
+    return base
+
+# ══════════════════════════════════════════════════════════════
 #  COMMANDES SLASH
 # ══════════════════════════════════════════════════════════════
+@bot.tree.command(name="creer_post", description="Génère et publie un post sur les réseaux sociaux (via Make)")
+@app_commands.describe(plateforme="LinkedIn, Facebook, ou Instagram", sujet="Le sujet de ton post", image="Image à joindre (optionnelle)")
+@app_commands.choices(plateforme=[
+    app_commands.Choice(name="LinkedIn", value="LinkedIn"),
+    app_commands.Choice(name="Facebook", value="Facebook"),
+    app_commands.Choice(name="Instagram", value="Instagram")
+])
+async def cmd_creer_post(interaction: discord.Interaction, plateforme: app_commands.Choice[str], sujet: str, image: discord.Attachment = None):
+    await interaction.response.defer()
+    
+    # URL de l'image (si fournie)
+    image_url = None
+    if image:
+        if "image" not in image.content_type:
+            await interaction.followup.send("❌ Le fichier fourni n'est pas une image valide.")
+            return
+        image_url = image.url
+
+    platform_name = plateforme.value
+    prompt = get_social_media_prompt(platform_name, sujet)
+    
+    try:
+        content = await gemini_generate(prompt)
+        
+        embed = discord.Embed(title=f"📝 Brouillon {platform_name}", description=content, color=0x00A8E8)
+        if image_url:
+            embed.set_image(url=image_url)
+            
+        view = SocialMediaView(interaction.user.id, platform_name, sujet, content, image_url)
+        await interaction.followup.send(embed=embed, view=view)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erreur lors de la génération IA : {e}")
+
 
 @bot.tree.command(name="ask", description="Pose n'importe quelle question à l'IA (fichier supporté)")
 @app_commands.describe(question="Ta question", fichier="Un fichier texte ou code (optionnel)")
