@@ -1520,7 +1520,16 @@ def get_social_media_prompt(platform: str, topic: str) -> str:
     base += f"Ton objectif est de rédiger un post extrêmement captivant pour {platform} sur le sujet suivant : '{topic}'.\n\n"
     
     if platform.lower() == "linkedin":
-        base += "RÈGLES LINKEDIN :\n- Format storytelling professionnel mais direct.\n- Commence par une 'Hook' très forte (une ligne courte qui donne envie de lire la suite).\n- Saute des lignes, aère le texte au maximum.\n- Évite le blabla corporate ennuyeux. Sois punchy.\n- Inclus 3 à 5 emojis maximum (pas trop).\n- Termine par une question ouverte pour générer des commentaires (Call to Action).\n- Ajoute 3-5 hashtags professionnels à la fin."
+        base += "RÈGLES STRICTES LINKEDIN (Agis comme un Copywriter B2B de haut niveau) :\n"
+        base += "- INTERDIT d'utiliser des formules bateau comme 'Bonjour réseau', 'Aujourd'hui je voulais vous parler', ou '🚀 Exciting news'.\n"
+        base += "- Utilise le framework PAS (Problème, Agitation, Solution).\n"
+        base += "- La toute première ligne (le Hook) DOIT être percutante, clivante ou poser un problème douloureux (ex: '90% des entreprises perdent des clients à cause de...').\n"
+        base += "- Saute une ligne après CHAQUE phrase pour créer un format très aéré (très important pour l'algorithme LinkedIn).\n"
+        base += "- Ton : Direct, expert, sans jargon complexe, centré sur la valeur apportée.\n"
+        base += "- Utilise maximum 3 emojis dans tout le post (ex: ❌, 👉, ✅).\n"
+        base += "- Fais des listes à puces simples si tu énumères des avantages.\n"
+        base += "- Termine par une question claire pour forcer l'audience à commenter (Call to Action).\n"
+        base += "- Inclus 3 hashtags ciblés à la toute fin."
     elif platform.lower() == "facebook":
         base += "RÈGLES FACEBOOK :\n- Ton chaleureux, communautaire, accessible.\n- Cible les PME et entrepreneurs.\n- Commence par accrocher l'attention avec un problème ou une émotion.\n- Le texte peut être un peu plus détendu que sur LinkedIn.\n- N'hésite pas à utiliser des emojis pour dynamiser.\n- Appelle clairement à l'action (ex: 'Contactez-nous' ou 'Lien en commentaire').\n- 2-3 hashtags pertinents à la fin."
     else:
