@@ -70,6 +70,20 @@ def verify_admin(request: Request):
         )
     return True
 
+@app.on_event("startup")
+async def startup_event():
+    """Au démarrage du serveur, on relance tous les bots qui devraient être en ligne."""
+    logger.info("Vérification et relance automatique des bots actifs...")
+    tenants = tenant_repo.get_all()
+    for t in tenants:
+        if t.get("status") in ["trial", "active"]:
+            try:
+                full_tenant = tenant_repo.get(t["id"])
+                if full_tenant:
+                    await pm2_service.start(full_tenant)
+            except Exception as e:
+                logger.error(f"Impossible de relancer le bot {t['id']} au démarrage: {e}")
+
 async def verify_green_api(instance_id: str, token: str) -> bool:
     """Vérifie si les identifiants Green API sont valides (renvoient 200)."""
     url = f"https://api.green-api.com/waInstance{instance_id}/getStateInstance/{token}"
