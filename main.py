@@ -922,8 +922,8 @@ async def check_and_send_followups(force=False):
                 prompt += f"{'Client' if msg['role'] == 'user' else 'Max'}: {msg['content']}\n"
             prompt += "\nObjectif : Rédige un SEUL petit message WhatsApp très court et ultra-naturel (1 à 2 phrases max) pour le relancer en douceur, montrer qu'on est disponible et ré-engager la conversation. Ne donne pas l'impression d'être un robot."
             
-            response = await wa_model.generate_content_async(prompt)
-            followup_msg = response.text.strip()
+            followup_msg = await gemini_generate(prompt)
+            followup_msg = followup_msg.strip()
             
             # Marquer comme relancé pour ne plus le spammer
             cursor.execute("UPDATE wa_followups SET status = 'followed_up', last_bot_msg = CURRENT_TIMESTAMP WHERE phone = ?", (phone,))
