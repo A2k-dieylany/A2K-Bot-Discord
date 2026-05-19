@@ -484,7 +484,10 @@ async def ask_gemini(session_id: int, user_message: str) -> str:
     contents = []
     for msg in get_history(session_id):
         role = "model" if msg["role"] == "assistant" else "user"
-        contents.append({"role": role, "parts": [msg["content"]]})
+        contents.append(types.Content(
+            role=role, 
+            parts=[types.Part.from_text(text=msg["content"])]
+        ))
         
     try:
         reply = await gemini_generate(contents, system_instruction=SYSTEM_PROMPT)
@@ -626,10 +629,13 @@ async def ask_gemini_wa(phone: str, user_message: str, media_part=None) -> str:
     history = get_wa_memory(phone, limit=10)
     for msg in history:
         role = "model" if msg["role"] == "assistant" else "user"
-        contents.append({"role": role, "parts": [msg["content"]]})
+        contents.append(types.Content(
+            role=role, 
+            parts=[types.Part.from_text(text=msg["content"])]
+        ))
         
-    if media_part:
-        contents[-1]["parts"].insert(0, media_part)
+    if media_part and contents:
+        contents[-1].parts.insert(0, media_part)
         
     try:
         reply = await gemini_generate(contents, system_instruction=SAV_PROMPT, is_wa=True)
@@ -691,7 +697,7 @@ async def poll_whatsapp_messages():
                                             file_bytes = await file_resp.read()
                                             raw_mime = body["messageData"]["fileMessageData"].get("mimeType", "")
                                             mime_type = raw_mime.split(";")[0] if raw_mime else ("audio/ogg" if "audio" in type_msg or "ptt" in type_msg else "image/jpeg")
-                                            media_part = {"mime_type": mime_type, "data": file_bytes}
+                                            media_part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
                                             print(f"✅ Média téléchargé avec succès ({len(file_bytes)} bytes, {mime_type})")
                                         else:
                                             error_body = await file_resp.text()
