@@ -1498,11 +1498,14 @@ class SocialMediaView(discord.ui.View):
         new_content = await gemini_generate(prompt)
         self.content = new_content
         
-        embed = discord.Embed(title=f"📝 Brouillon {self.platform}", description=new_content, color=0x00A8E8)
+        msg_text = f"📝 **Brouillon {self.platform}**\n\n{new_content}"
+        if len(msg_text) > 1990:
+            msg_text = msg_text[:1990] + "..."
+            
         if self.image_url:
-            embed.set_image(url=self.image_url)
+            msg_text += f"\n\n🔗 Image attachée : {self.image_url}"
         
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(content=msg_text, embed=None, view=self)
         await interaction.followup.send("🔄 Nouveau brouillon généré !", ephemeral=True)
 
     @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.danger)
@@ -1523,7 +1526,8 @@ def get_social_media_prompt(platform: str, topic: str) -> str:
     else:
         base += "RÈGLES GÉNÉRALES :\n- Fais un post engageant, clair, avec des emojis et des hashtags adaptés."
         
-    base += "\n\nGénère uniquement le contenu du post (pas d'intro type 'Voici ton post')."
+    base += "\n\n⚠️ TRES IMPORTANT : Le texte DOIT faire moins de 1500 caractères au total. Sois percutant et concis.\n"
+    base += "Génère uniquement le contenu du post (pas d'intro type 'Voici ton post')."
     return base
 
 # ══════════════════════════════════════════════════════════════
@@ -1553,12 +1557,15 @@ async def cmd_creer_post(interaction: discord.Interaction, plateforme: app_comma
     try:
         content = await gemini_generate(prompt)
         
-        embed = discord.Embed(title=f"📝 Brouillon {platform_name}", description=content, color=0x00A8E8)
+        msg_text = f"📝 **Brouillon {platform_name}**\n\n{content}"
+        if len(msg_text) > 1990:
+            msg_text = msg_text[:1990] + "..."
+            
         if image_url:
-            embed.set_image(url=image_url)
+            msg_text += f"\n\n🔗 Image attachée : {image_url}"
             
         view = SocialMediaView(interaction.user.id, platform_name, sujet, content, image_url)
-        await interaction.followup.send(embed=embed, view=view)
+        await interaction.followup.send(content=msg_text, view=view)
     except Exception as e:
         await interaction.followup.send(f"❌ Erreur lors de la génération IA : {e}")
 
