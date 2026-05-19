@@ -19,7 +19,8 @@ from typing import Optional
 
 import aiohttp
 import edge_tts
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -59,8 +60,9 @@ except FileNotFoundError:
     BASE_DE_CONNAISSANCES = "Aucune information supplémentaire fournie."
 
 # ── Initialisation Gemini ───────────────────────────────────────────────────
+gemini_client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ── Prompt Système (dynamique selon les connaissances du tenant) ────────────
 SAV_PROMPT = f"""Tu es Max, l'assistante IA de {BUSINESS_NAME}.
@@ -160,13 +162,11 @@ async def ask_gemini(phone: str, user_msg: str, media_part=None) -> str:
     for attempt in range(len(MODELS)):
         idx = (_model_index + attempt) % len(MODELS)
         try:
-            model = genai.GenerativeModel(
-                model_name=MODELS[idx],
-                system_instruction=SAV_PROMPT
-            )
-            response = await model.generate_content_async(
-                contents,
-                generation_config=genai.types.GenerationConfig(
+            response = await gemini_client.aio.models.generate_content(
+                model=MODELS[idx],
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SAV_PROMPT,
                     temperature=0.75,
                     max_output_tokens=800
                 )
@@ -465,12 +465,10 @@ async def polling_loop():
                         if dl_url:
                             media_bytes = await download_media(dl_url)
                             if media_bytes:
-                                media_part = {
-                                    "inline_data": {
-                                        "mime_type": "audio/ogg",
-                                        "data": base64.b64encode(media_bytes).decode()
-                                    }
-                                }
+                                media_part = types.Part.from_bytes(
+                                    data=media_bytes, 
+                                    mime_type="audio/ogg"
+                                )
                     else:
                         text = caption or "Une image a été envoyée."
                         dl_url = msg_data.get("downloadUrl")
@@ -478,12 +476,10 @@ async def polling_loop():
                             media_bytes = await download_media(dl_url)
                             if media_bytes:
                                 mime = msg_data.get("mimeType", "image/jpeg")
-                                media_part = {
-                                    "inline_data": {
-                                        "mime_type": mime,
-                                        "data": base64.b64encode(media_bytes).decode()
-                                    }
-                                }
+                                media_part = types.Part.from_bytes(
+                                    data=media_bytes, 
+                                    mime_type=mime
+                                )
 
                 logger.info(f"📱 Message [{TENANT_ID}] de {name} (+{phone}): {text[:60]}...")
 

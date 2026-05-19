@@ -9,7 +9,8 @@ import os
 import discord
 from discord import app_commands
 from discord.ext import commands
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from collections import defaultdict
 import aiohttp
@@ -83,8 +84,9 @@ except FileNotFoundError:
     BASE_DE_CONNAISSANCES = "Aucune information supplémentaire."
 
 # ── Clients ────────────────────────────────────────────────────
+gemini_client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -218,11 +220,8 @@ RÈGLES STRICTES :
 """
 
 def get_active_model(system_instruction: str = None):
-    """Retourne un modèle Gemini actif. Fait une rotation si quota dépassé."""
-    return genai.GenerativeModel(
-        model_name=MODELS_ROTATION[current_model_index],
-        system_instruction=system_instruction
-    )
+    """(Déprécié) - Gardé pour compatibilité si appelé ailleurs, mais gemini_generate gère la génération."""
+    return None
 
 # ══════════════════════════════════════════════════════════════
 #  GÉNÉRATION DE DEVIS PDF PROFESSIONNEL
@@ -442,23 +441,25 @@ async def gemini_generate(prompt_or_contents, system_instruction: str = None, is
         idx = (current_model_index + attempt) % len(MODELS_ROTATION)
         model_name = MODELS_ROTATION[idx]
         try:
-            active_model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_instruction
+            config = types.GenerateContentConfig(
+                temperature=0.7, 
+                max_output_tokens=1000
             )
-            if isinstance(prompt_or_contents, str):
-                response = await active_model.generate_content_async(prompt_or_contents)
-            else:
-                response = await active_model.generate_content_async(
-                    prompt_or_contents,
-                    generation_config=genai.types.GenerationConfig(temperature=0.7, max_output_tokens=1000)
-                )
+            if system_instruction:
+                config.system_instruction = system_instruction
+
+            response = await gemini_client.aio.models.generate_content(
+                model=model_name,
+                contents=prompt_or_contents,
+                config=config
+            )
+            
             if idx != current_model_index:
                 print(f"🔄 Modèle actif changé → {model_name}")
                 current_model_index = idx
             return response.text
         except Exception as e:
-            if "429" in str(e) or "Quota" in str(e):
+            if "429" in str(e) or "Quota" in str(e) or "429 Too Many Requests" in str(e):
                 print(f"⚠️ Quota dépassé sur {model_name}, tentative avec le prochain modèle...")
                 continue
             raise e
