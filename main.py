@@ -459,8 +459,9 @@ async def gemini_generate(prompt_or_contents, system_instruction: str = None, is
                 current_model_index = idx
             return response.text
         except Exception as e:
-            if "429" in str(e) or "Quota" in str(e) or "429 Too Many Requests" in str(e):
-                print(f"⚠️ Quota dépassé sur {model_name}, tentative avec le prochain modèle...")
+            error_str = str(e)
+            if "429" in error_str or "Quota" in error_str or "Too Many Requests" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
+                print(f"⚠️ Modèle {model_name} saturé (Quota/503), tentative avec le prochain modèle...")
                 continue
             raise e
     

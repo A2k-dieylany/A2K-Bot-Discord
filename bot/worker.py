@@ -178,8 +178,9 @@ async def ask_gemini(phone: str, user_msg: str, media_part=None) -> str:
             add_memory(phone, "assistant", reply)
             return reply
         except Exception as e:
-            if "429" in str(e) or "quota" in str(e).lower():
-                logger.warning(f"⚠️ Quota {MODELS[idx]}, rotation...")
+            error_str = str(e).lower()
+            if "429" in error_str or "quota" in error_str or "503" in error_str or "unavailable" in error_str:
+                logger.warning(f"⚠️ Modèle {MODELS[idx]} saturé (Quota/503), rotation...")
                 continue
             logger.error(f"❌ Erreur Gemini: {e}")
             raise
