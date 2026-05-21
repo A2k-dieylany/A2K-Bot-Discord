@@ -6,6 +6,14 @@
 """
 
 import os
+import sys
+import io
+
+# Correction encodage console pour Windows (évite les UnicodeEncodeError avec les emojis)
+if sys.platform.startswith('win'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -901,12 +909,18 @@ async def generate_and_send_report():
 
 
 async def check_and_send_followups(force=False):
-    """Vérifie toutes les 30 minutes s'il faut relancer des clients après 48h de silence."""
+    """Vérifie s'il faut relancer des clients après un délai configurable."""
     try:
+        # Vérifier si les relances sont activées (sauf si on force)
+        if not force and not bot.config.get("auto_followup", True):
+            return
+
+        delay_hours = bot.config.get("followup_delay_hours", 48)
+
         # Chercher ceux en 'pending'
         query = "SELECT phone FROM wa_followups WHERE status = 'pending'"
         if not force:
-            query += " AND last_bot_msg <= datetime('now', '-48 hours')"
+            query += f" AND last_bot_msg <= datetime('now', '-{delay_hours} hours')"
             
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -1365,6 +1379,10 @@ async def setup_hook():
     bot.conn = conn
     bot.cursor = cursor
     bot.WA_LOG_CHANNEL = WA_LOG_CHANNEL
+    bot.config = {
+        "followup_delay_hours": 48,
+        "auto_followup": True
+    }
     
     # Chargement dynamique des Cogs
     if os.path.exists("./cogs"):
