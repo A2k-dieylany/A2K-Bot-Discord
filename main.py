@@ -898,10 +898,7 @@ async def generate_and_send_report():
     except Exception as e:
         print(f"⚠️ Erreur lors de la génération du rapport : {e}")
 
-@bot.tree.command(name="wa_rapport", description="Génère et t'envoie le rapport de stats sur WhatsApp instantanément")
-async def cmd_wa_rapport(interaction: discord.Interaction):
-    await interaction.response.send_message("📊 Génération du rapport en cours... Vérifie ton WhatsApp !", ephemeral=True)
-    await generate_and_send_report()
+
 
 async def check_and_send_followups(force=False):
     """Vérifie toutes les 30 minutes s'il faut relancer des clients après 48h de silence."""
@@ -943,10 +940,7 @@ async def check_and_send_followups(force=False):
     except Exception as e:
         print(f"⚠️ Erreur lors des relances automatiques : {e}")
 
-@bot.tree.command(name="wa_force_relance", description="[Admin] Force la vérification immédiate des relances Drip Marketing")
-async def cmd_wa_force_relance(interaction: discord.Interaction):
-    await interaction.response.send_message("🔍 Lancement forcé de la relance (ignore la limite des 48h)...", ephemeral=True)
-    await check_and_send_followups(force=True)
+
 
 async def execute_planned_message(numeros: list, message: str, label: str):
     """Exécute un envoi programmé."""
@@ -1353,6 +1347,37 @@ async def start_web_server():
 #  ÉVÉNEMENTS BOT
 # ══════════════════════════════════════════════════════════════
 
+async def setup_hook():
+    bot.conversation_memory = conversation_memory
+    bot.gemini_generate = gemini_generate
+    bot.ask_gemini = ask_gemini
+    bot.send_embed_reply = send_embed_reply
+    bot.send_long_reply = send_long_reply
+    bot.MODEL_NAME = MODEL_NAME
+    # WhatsApp dependencies
+    bot.send_whatsapp = send_whatsapp
+    bot.execute_planned_message = execute_planned_message
+    bot.generate_and_send_report = generate_and_send_report
+    bot.check_and_send_followups = check_and_send_followups
+    bot.scheduler = scheduler
+    bot.wa_planning = wa_planning
+    bot.planning_counter = planning_counter
+    bot.conn = conn
+    bot.cursor = cursor
+    bot.WA_LOG_CHANNEL = WA_LOG_CHANNEL
+    
+    # Chargement dynamique des Cogs
+    if os.path.exists("./cogs"):
+        for filename in os.listdir('./cogs'):
+            if filename.endswith('.py') and not filename.startswith('__'):
+                try:
+                    await bot.load_extension(f'cogs.{filename[:-3]}')
+                    print(f"✅ Cog chargé : {filename}")
+                except Exception as e:
+                    print(f"❌ Erreur au chargement du Cog {filename}: {e}")
+
+bot.setup_hook = setup_hook
+
 @bot.event
 async def on_ready():
     print(f"╔══════════════════════════════════════════╗")
@@ -1437,393 +1462,11 @@ async def on_message(message: discord.Message):
                     else:
                         await message.channel.send(part)
 
-# ══════════════════════════════════════════════════════════════
-#  SOCIAL MEDIA MANAGER (MAKE.COM)
-# ══════════════════════════════════════════════════════════════
-
-class SocialMediaView(discord.ui.View):
-    def __init__(self, user_id: int, platform: str, topic: str, content: str, image_url: str = None):
-        super().__init__(timeout=86400)
-        self.user_id = user_id
-        self.platform = platform
-        self.topic = topic
-        self.content = content
-        self.image_url = image_url
-
-    @discord.ui.button(label="✅ Publier", style=discord.ButtonStyle.success)
-    async def btn_publish(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Tu n'es pas l'auteur de ce post.", ephemeral=True)
-            return
-            
-        if not MAKE_WEBHOOK_URL:
-            await interaction.response.send_message("❌ Erreur : MAKE_WEBHOOK_URL non configuré dans le .env", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-        
-        # Envoi au Webhook Make.com
-        payload = {
-            "platform": self.platform,
-            "topic": self.topic,
-            "content": self.content,
-            "image_url": self.image_url,
-            "author": interaction.user.name
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(MAKE_WEBHOOK_URL, json=payload) as resp:
-                    if resp.status in [200, 201, 202]:
-                        for child in self.children:
-                            child.disabled = True
-                        await interaction.message.edit(view=self)
-                        await interaction.followup.send(f"🚀 **Succès !** Le post a été envoyé à Make.com pour publication sur {self.platform} !")
-                    else:
-                        await interaction.followup.send(f"⚠️ Erreur HTTP {resp.status} depuis Make.com.")
-        except Exception as e:
-            await interaction.followup.send(f"❌ Erreur de connexion au Webhook : {e}")
-
-    @discord.ui.button(label="🔄 Regénérer", style=discord.ButtonStyle.primary)
-    async def btn_regenerate(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Tu n'es pas l'auteur.", ephemeral=True)
-            return
-            
-        await interaction.response.defer()
-        
-        prompt = get_social_media_prompt(self.platform, self.topic)
-        prompt += "\n\n(IMPORTANT: L'utilisateur a demandé une nouvelle version différente de la précédente. Change l'angle d'approche ou le ton.)"
-        
-        new_content = await gemini_generate(prompt)
-        self.content = new_content
-        
-        msg_text = f"📝 **Brouillon {self.platform}**\n\n{new_content}"
-        if len(msg_text) > 1990:
-            msg_text = msg_text[:1990] + "..."
-            
-        if self.image_url:
-            msg_text += f"\n\n🔗 Image attachée : {self.image_url}"
-        
-        await interaction.message.edit(content=msg_text, embed=None, view=self)
-        await interaction.followup.send("🔄 Nouveau brouillon généré !", ephemeral=True)
-
-    @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.danger)
-    async def btn_cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id == self.user_id:
-            await interaction.message.delete()
-        else:
-            await interaction.response.send_message("❌ Tu n'es pas l'auteur.", ephemeral=True)
-
-def get_social_media_prompt(platform: str, topic: str) -> str:
-    base = f"Tu es le Social Media Manager Expert de l'agence {BUSINESS_NAME}. "
-    base += f"Ton objectif est de rédiger un post extrêmement captivant pour {platform} sur le sujet suivant : '{topic}'.\n\n"
-    
-    if platform.lower() == "linkedin":
-        base += "RÈGLES STRICTES LINKEDIN (Agis comme un Copywriter B2B de haut niveau) :\n"
-        base += "- INTERDIT d'utiliser des formules bateau comme 'Bonjour réseau', 'Aujourd'hui je voulais vous parler', ou '🚀 Exciting news'.\n"
-        base += "- Utilise le framework PAS (Problème, Agitation, Solution).\n"
-        base += "- La toute première ligne (le Hook) DOIT être percutante, clivante ou poser un problème douloureux (ex: '90% des entreprises perdent des clients à cause de...').\n"
-        base += "- Saute une ligne après CHAQUE phrase pour créer un format très aéré (très important pour l'algorithme LinkedIn).\n"
-        base += "- Ton : Direct, expert, sans jargon complexe, centré sur la valeur apportée.\n"
-        base += "- Utilise maximum 3 emojis dans tout le post (ex: ❌, 👉, ✅).\n"
-        base += "- Fais des listes à puces simples si tu énumères des avantages.\n"
-        base += "- Termine par une question claire pour forcer l'audience à commenter (Call to Action).\n"
-        base += "- Inclus 3 hashtags ciblés à la toute fin."
-    elif platform.lower() == "facebook":
-        base += "RÈGLES FACEBOOK :\n- Ton chaleureux, communautaire, accessible.\n- Cible les PME et entrepreneurs.\n- Commence par accrocher l'attention avec un problème ou une émotion.\n- Le texte peut être un peu plus détendu que sur LinkedIn.\n- N'hésite pas à utiliser des emojis pour dynamiser.\n- Appelle clairement à l'action (ex: 'Contactez-nous' ou 'Lien en commentaire').\n- 2-3 hashtags pertinents à la fin."
-    else:
-        base += "RÈGLES GÉNÉRALES :\n- Fais un post engageant, clair, avec des emojis et des hashtags adaptés."
-        
-    base += "\n\n⚠️ TRES IMPORTANT : Le texte DOIT faire moins de 1500 caractères au total. Sois percutant et concis.\n"
-    base += "Génère uniquement le contenu du post (pas d'intro type 'Voici ton post')."
-    return base
-
-# ══════════════════════════════════════════════════════════════
-#  COMMANDES SLASH
-# ══════════════════════════════════════════════════════════════
-@bot.tree.command(name="creer_post", description="Génère et publie un post sur les réseaux sociaux (via Make)")
-@app_commands.describe(plateforme="LinkedIn, Facebook, ou Instagram", sujet="Le sujet de ton post", image="Image à joindre (optionnelle)")
-@app_commands.choices(plateforme=[
-    app_commands.Choice(name="LinkedIn", value="LinkedIn"),
-    app_commands.Choice(name="Facebook", value="Facebook"),
-    app_commands.Choice(name="Instagram", value="Instagram")
-])
-async def cmd_creer_post(interaction: discord.Interaction, plateforme: app_commands.Choice[str], sujet: str, image: discord.Attachment = None):
-    await interaction.response.defer()
-    
-    # URL de l'image (si fournie)
-    image_url = None
-    if image:
-        if "image" not in image.content_type:
-            await interaction.followup.send("❌ Le fichier fourni n'est pas une image valide.")
-            return
-        image_url = image.url
-
-    platform_name = plateforme.value
-    prompt = get_social_media_prompt(platform_name, sujet)
-    
-    try:
-        content = await gemini_generate(prompt)
-        
-        msg_text = f"📝 **Brouillon {platform_name}**\n\n{content}"
-        if len(msg_text) > 1990:
-            msg_text = msg_text[:1990] + "..."
-            
-        if image_url:
-            msg_text += f"\n\n🔗 Image attachée : {image_url}"
-            
-        view = SocialMediaView(interaction.user.id, platform_name, sujet, content, image_url)
-        await interaction.followup.send(content=msg_text, view=view)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Erreur lors de la génération IA : {e}")
 
 
-@bot.tree.command(name="ask", description="Pose n'importe quelle question à l'IA (fichier supporté)")
-@app_commands.describe(question="Ta question", fichier="Un fichier texte ou code (optionnel)")
-async def cmd_ask(interaction: discord.Interaction, question: str, fichier: discord.Attachment = None):
-    await interaction.response.defer()
-    prompt = question
-    if fichier and fichier.size < 1000000:
-        try:
-            file_bytes = await fichier.read()
-            file_text = file_bytes.decode('utf-8')
-            prompt += f"\n\n--- Fichier '{fichier.filename}' ---\n```\n{file_text[:4000]}\n```"
-        except UnicodeDecodeError:
-            pass
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_long_reply(interaction, f"💬 **{interaction.user.display_name}** : {question}\n\n{reply}")
 
-@bot.tree.command(name="code", description="Génère du code dans le langage de ton choix")
-@app_commands.describe(langage="Langage (ex: Python, JavaScript...)", description="Ce que doit faire le code")
-async def cmd_code(interaction: discord.Interaction, langage: str, description: str):
-    await interaction.response.defer()
-    prompt = (f"Génère du code {langage} pour : {description}\n\n"
-              f"Fournis : 1. Le code complet dans un bloc ```{langage.lower()} "
-              f"2. Explication courte 3. Comment l'utiliser")
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_long_reply(interaction, f"⚙️ **Code {langage}** — *{description}*\n\n{reply}")
 
-@bot.tree.command(name="debug", description="Débogue ton code et corrige les erreurs")
-@app_commands.describe(code="Le code problématique", erreur="Le message d'erreur")
-async def cmd_debug(interaction: discord.Interaction, code: str, erreur: str = "Non précisée"):
-    await interaction.response.defer()
-    prompt = (f"Débogue ce code :\n```\n{code}\n```\nErreur : {erreur}\n\n"
-              f"Fournis : 1. Le bug identifié 2. Le code corrigé 3. L'explication")
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_long_reply(interaction, f"🐛 **Débogage :**\n\n{reply}")
 
-@bot.tree.command(name="expliquer", description="Explique un bloc de code")
-@app_commands.describe(code="Le code à expliquer")
-async def cmd_expliquer(interaction: discord.Interaction, code: str):
-    await interaction.response.defer()
-    prompt = f"Explique ce code clairement :\n```\n{code}\n```"
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_long_reply(interaction, f"📖 **Explication :**\n\n{reply}")
-
-@bot.tree.command(name="traduire", description="Traduit un texte dans la langue de ton choix")
-@app_commands.describe(texte="Le texte à traduire", langue="Langue cible (ex: Anglais, Wolof...)")
-async def cmd_traduire(interaction: discord.Interaction, texte: str, langue: str):
-    await interaction.response.defer()
-    prompt = f"Traduis ce texte en {langue} :\n\n{texte}"
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, f"🌍 Traduction → {langue}", reply, 0x1ABC9C)
-
-@bot.tree.command(name="resume", description="Résume un texte long en points clés")
-@app_commands.describe(texte="Le texte à résumer")
-async def cmd_resume(interaction: discord.Interaction, texte: str):
-    await interaction.response.defer()
-    prompt = f"Résume ce texte avec : 1. TL;DR en 2 phrases 2. Points clés 3. Conclusion\n\n{texte}"
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, "📝 Résumé du texte", reply, 0x9B59B6)
-
-@bot.tree.command(name="tache", description="Décompose une tâche complexe en étapes")
-@app_commands.describe(tache="La tâche complexe à accomplir")
-async def cmd_tache(interaction: discord.Interaction, tache: str):
-    await interaction.response.defer()
-    prompt = (f"Décompose cette tâche en étapes concrètes : {tache}\n\n"
-              f"Inclus : analyse, étapes détaillées, outils recommandés, pièges à éviter")
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, f"✅ Décomposition : {tache[:200]}", reply, 0x3498DB)
-
-@bot.tree.command(name="plan", description="Crée un plan de projet professionnel")
-@app_commands.describe(projet="Description du projet", delai="Délai (ex: 2 semaines)")
-async def cmd_plan(interaction: discord.Interaction, projet: str, delai: str = "Non défini"):
-    await interaction.response.defer()
-    prompt = (f"Crée un plan de projet pour : {projet} (délai : {delai})\n"
-              f"Inclus : objectifs, phases, livrables, risques, KPIs")
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, f"📋 Plan de projet : {projet[:200]}", reply, 0x2ECC71)
-
-@bot.tree.command(name="math", description="Résout des problèmes mathématiques")
-@app_commands.describe(probleme="Le problème à résoudre")
-async def cmd_math(interaction: discord.Interaction, probleme: str):
-    await interaction.response.defer()
-    prompt = f"Résous step by step : {probleme}\nDonne : démarche, réponse finale, vérification"
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, "🔢 Mathématiques", reply, 0xE67E22)
-
-@bot.tree.command(name="corriger", description="Corrige et améliore un texte")
-@app_commands.describe(texte="Le texte à corriger", style="Style (professionnel, académique...)")
-async def cmd_corriger(interaction: discord.Interaction, texte: str, style: str = "professionnel"):
-    await interaction.response.defer()
-    prompt = f"Corrige et améliore en style {style} :\n\n{texte}\n\nDonne : texte corrigé + liste des corrections"
-    reply = await ask_gemini(interaction.channel_id, prompt)
-    await send_embed_reply(interaction, f"✍️ Correction (Style: {style})", reply, 0xE74C3C)
-
-@bot.tree.command(name="clear", description="Efface l'historique du salon actuel")
-async def cmd_clear(interaction: discord.Interaction):
-    conversation_memory[interaction.channel_id].clear()
-    await interaction.response.send_message("🗑️ Historique de ce salon effacé ! On repart de zéro.", ephemeral=True)
-
-# ══════════════════════════════════════════════════════════════
-#  COMMANDES WHATSAPP (Manuel & Planning)
-# ══════════════════════════════════════════════════════════════
-
-@bot.tree.command(name="whatsapp", description="Envoie un message WhatsApp depuis Discord")
-@app_commands.describe(
-    telephone="Numéro avec indicatif pays (ex: 221771234567)",
-    message="Le message à envoyer"
-)
-async def cmd_whatsapp(interaction: discord.Interaction, telephone: str, message: str):
-    await interaction.response.defer()
-    try:
-        result = await send_whatsapp(telephone, message)
-        if "idMessage" in result:
-            await interaction.followup.send(
-                f"✅ **Message WhatsApp envoyé !**\n"
-                f"📱 Destinataire : `{telephone}`\n"
-                f"💬 Message : {message}"
-            )
-        else:
-            await interaction.followup.send(f"❌ Erreur : {result}")
-    except Exception as e:
-        await interaction.followup.send(f"❌ Erreur WhatsApp : {e}")
-
-@bot.tree.command(name="wa_ia", description="Génère un message IA et l'envoie sur WhatsApp")
-@app_commands.describe(
-    telephone="Numéro avec indicatif (ex: 221771234567)",
-    sujet="Sujet du message (ex: rappel réunion demain 10h, promo -20%...)"
-)
-async def cmd_wa_ia(interaction: discord.Interaction, telephone: str, sujet: str):
-    await interaction.response.defer()
-    prompt = (
-        f"Rédige un message WhatsApp professionnel et naturel sur ce sujet : {sujet}\n\n"
-        f"Court (max 3 lignes), chaleureux, direct. Juste le texte, rien d'autre."
-    )
-    message_genere = await ask_gemini(interaction.channel_id, prompt)
-    try:
-        result = await send_whatsapp(telephone, message_genere)
-        if "idMessage" in result:
-            await interaction.followup.send(
-                f"🤖 **Message IA envoyé sur WhatsApp !**\n"
-                f"📱 Destinataire : `{telephone}`\n\n"
-                f"💬 **Message :**\n{message_genere}"
-            )
-        else:
-            await interaction.followup.send(f"🤖 Message généré :\n{message_genere}\n\n❌ Erreur envoi : {result}")
-    except Exception as e:
-        await interaction.followup.send(f"❌ Erreur : {e}")
-
-@bot.tree.command(name="wa_broadcast", description="Envoie un message WhatsApp à plusieurs personnes")
-@app_commands.describe(
-    numeros="Numéros séparés par des virgules (ex: 221771234567,221781234567)",
-    message="Le message à envoyer à tous"
-)
-async def cmd_wa_broadcast(interaction: discord.Interaction, numeros: str, message: str):
-    await interaction.response.defer()
-    liste = [n.strip() for n in numeros.split(",")]
-    resultats = []
-    for num in liste:
-        try:
-            result = await send_whatsapp(num, message)
-            resultats.append(f"✅ `{num}`" if "idMessage" in result else f"❌ `{num}`")
-            await asyncio.sleep(1)
-        except Exception as e:
-            resultats.append(f"❌ `{num}` — {e}")
-    await interaction.followup.send(
-        f"📢 **Broadcast terminé !**\n💬 *{message}*\n\n" + "\n".join(resultats)
-    )
-
-@bot.tree.command(name="wa_planning_add", description="Programme un envoi WhatsApp automatique")
-@app_commands.describe(
-    heure="Heure d'envoi (ex: 08:00)",
-    numeros="Numéros séparés par virgules",
-    message="Message à envoyer automatiquement"
-)
-async def cmd_planning_add(interaction: discord.Interaction, heure: str, numeros: str, message: str):
-    global planning_counter
-    await interaction.response.defer()
-    try:
-        h, m = heure.split(":")
-        liste = [n.strip() for n in numeros.split(",")]
-        planning_counter += 1
-        pid = planning_counter
-        label = f"Planning #{pid} à {heure}"
-
-        # Ajouter au scheduler
-        scheduler.add_job(
-            execute_planned_message,
-            "cron",
-            hour=int(h),
-            minute=int(m),
-            args=[liste, message, label],
-            id=f"plan_{pid}"
-        )
-
-        wa_planning.append({
-            "id": pid, "heure": heure,
-            "numeros": liste, "message": message
-        })
-
-        await interaction.followup.send(
-            f"⏰ **Planning #{pid} ajouté !**\n"
-            f"🕐 Heure : **{heure}** (tous les jours)\n"
-            f"👥 Contacts : **{len(liste)}** numéros\n"
-            f"💬 Message : *{message}*"
-        )
-    except Exception as e:
-        await interaction.followup.send(f"❌ Erreur : {e}\nFormat heure : HH:MM (ex: 08:00)")
-
-@bot.tree.command(name="wa_planning_list", description="Voir les messages programmés")
-async def cmd_planning_list(interaction: discord.Interaction):
-    if not wa_planning:
-        await interaction.response.send_message("📭 Aucun message programmé.", ephemeral=True)
-        return
-    embed = discord.Embed(title="⏰ Messages WhatsApp programmés", color=0x25D366)
-    for p in wa_planning:
-        embed.add_field(
-            name=f"#{p['id']} — {p['heure']} tous les jours",
-            value=f"👥 {len(p['numeros'])} contacts\n💬 {p['message'][:80]}...",
-            inline=False
-        )
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="wa_planning_remove", description="Supprimer un message programmé")
-@app_commands.describe(id_planning="L'ID du planning à supprimer")
-async def cmd_planning_remove(interaction: discord.Interaction, id_planning: int):
-    global wa_planning
-    try:
-        scheduler.remove_job(f"plan_{id_planning}")
-        wa_planning = [p for p in wa_planning if p["id"] != id_planning]
-        await interaction.response.send_message(f"🗑️ Planning #{id_planning} supprimé !")
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Erreur : {e}")
-
-@bot.tree.command(name="info", description="Affiche les commandes disponibles")
-async def cmd_info(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title=f"🤖 {BOT_NAME} — Agent IA + WhatsApp Automation",
-        description=f"Propulsé par **Gemini 1.5 Flash** & Green API",
-        color=0x5865F2
-    )
-    embed.add_field(name="💬 Conversation IA", value="`/ask` `/clear` `@mention`\n*📎 Tu peux joindre un fichier !*", inline=False)
-    embed.add_field(name="💻 Code & Texte", value="`/code` `/debug` `/expliquer` `/traduire` `/resume` `/corriger`", inline=False)
-    embed.add_field(name="🎯 Productivité", value="`/tache` `/plan` `/math`", inline=False)
-    embed.add_field(name="📱 WhatsApp Manuel", value="`/whatsapp` `/wa_ia` `/wa_broadcast`", inline=False)
-    embed.add_field(name="⏰ WhatsApp Auto", value="`/wa_planning_add` `/wa_planning_list` `/wa_planning_remove`\n`🤖 Bot SAV Auto` `📋 Webhook Formulaires`", inline=False)
-    embed.set_footer(text=f"Modèle : {MODEL_NAME} | Mémoire : {MAX_HISTORY} messages")
-    await interaction.response.send_message(embed=embed)
 
 # ══════════════════════════════════════════════════════════════
 #  LANCEMENT
