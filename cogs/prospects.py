@@ -11,6 +11,7 @@ from discord import app_commands
 import aiohttp
 from bs4 import BeautifulSoup
 import re
+from datetime import datetime
 
 
 # ══════════════════════════════════════════════════════════════
@@ -233,8 +234,33 @@ class ProspectsCog(commands.Cog):
                 for part in parts:
                     await interaction.channel.send(part)
 
+            # --- Étape 3 : Sauvegarde dans le CRM Google Sheets ---
+            self.bot.loop.create_task(self._save_prospect_to_sheets(url, analysis, email_msg or linkedin_msg))
+
         except Exception as e:
             await interaction.followup.send(f"❌ Erreur lors de l'analyse IA : {e}")
+
+    async def _save_prospect_to_sheets(self, url: str, analysis: str, approche: str):
+        """Ajoute une nouvelle ligne dans le Google Sheet configuré."""
+        if not getattr(self.bot, 'gc', None) or not getattr(self.bot, 'GOOGLE_SHEET_ID', None):
+            return # Google Sheets non configuré
+
+        try:
+            # Extraire une idée générale du diagnostic (les 500 premiers caractères)
+            diagnostic = analysis[:500] + "..." if len(analysis) > 500 else analysis
+            
+            # Formater la date
+            date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Ouvrir le fichier et la première feuille
+            sheet = self.bot.gc.open_by_key(self.bot.GOOGLE_SHEET_ID).sheet1
+
+            # Ajouter la ligne: [Date, URL, Diagnostic, Approche, Statut]
+            row = [date_str, url, diagnostic, approche, "À contacter"]
+            sheet.append_row(row)
+            print(f"✅ Prospect {url} sauvegardé dans Google Sheets avec succès !")
+        except Exception as e:
+            print(f"⚠️ Impossible de sauvegarder le prospect dans Google Sheets : {e}")
 
     @app_commands.command(
         name="prospect_manuel",

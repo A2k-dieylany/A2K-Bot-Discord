@@ -1379,6 +1379,8 @@ async def setup_hook():
     bot.conn = conn
     bot.cursor = cursor
     bot.WA_LOG_CHANNEL = WA_LOG_CHANNEL
+    bot.gc = gc
+    bot.GOOGLE_SHEET_ID = GOOGLE_SHEET_ID
     bot.config = {
         "followup_delay_hours": 48,
         "auto_followup": True
