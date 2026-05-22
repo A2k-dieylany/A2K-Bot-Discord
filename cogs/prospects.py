@@ -252,13 +252,22 @@ class ProspectsCog(commands.Cog):
             # Formater la date
             date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Ouvrir le fichier et la première feuille
-            sheet = self.bot.gc.open_by_key(self.bot.GOOGLE_SHEET_ID).sheet1
+            # Ouvrir le fichier global
+            doc = self.bot.gc.open_by_key(self.bot.GOOGLE_SHEET_ID)
+            
+            # Essayer d'ouvrir l'onglet "Prospection", sinon le créer
+            import gspread
+            try:
+                sheet = doc.worksheet("Prospection")
+            except gspread.exceptions.WorksheetNotFound:
+                sheet = doc.add_worksheet(title="Prospection", rows="1000", cols="10")
+                # Ajouter les en-têtes si c'est la première fois
+                sheet.append_row(["Date", "URL", "Diagnostic", "Approche", "Statut"])
 
             # Ajouter la ligne: [Date, URL, Diagnostic, Approche, Statut]
             row = [date_str, url, diagnostic, approche, "À contacter"]
             sheet.append_row(row)
-            print(f"✅ Prospect {url} sauvegardé dans Google Sheets avec succès !")
+            print(f"✅ Prospect {url} sauvegardé dans l'onglet 'Prospection' avec succès !")
         except Exception as e:
             print(f"⚠️ Impossible de sauvegarder le prospect dans Google Sheets : {e}")
 
