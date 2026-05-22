@@ -235,15 +235,25 @@ class ProspectsCog(commands.Cog):
                     await interaction.channel.send(part)
 
             # --- Étape 3 : Sauvegarde dans le CRM Google Sheets ---
-            self.bot.loop.create_task(self._save_prospect_to_sheets(url, analysis, email_msg or linkedin_msg))
+            crm_result = await self._save_prospect_to_sheets(url, analysis, email_msg or linkedin_msg)
+            if crm_result:
+                await interaction.channel.send(f"📊 {crm_result}")
 
         except Exception as e:
             await interaction.followup.send(f"❌ Erreur lors de l'analyse IA : {e}")
 
-    async def _save_prospect_to_sheets(self, url: str, analysis: str, approche: str):
-        """Ajoute une nouvelle ligne dans le Google Sheet configuré."""
-        if not getattr(self.bot, 'gc', None) or not getattr(self.bot, 'GOOGLE_SHEET_ID', None):
-            return # Google Sheets non configuré
+    async def _save_prospect_to_sheets(self, url: str, analysis: str, approche: str) -> str:
+        """Ajoute une nouvelle ligne dans le Google Sheet configuré. Retourne un message de statut."""
+        gc = getattr(self.bot, 'gc', None)
+        sheet_id = getattr(self.bot, 'GOOGLE_SHEET_ID', None)
+
+        if not gc:
+            return "⚠️ Google Sheets non connecté (google_credentials.json manquant)."
+        if not sheet_id or sheet_id.strip("'\" ") == "":
+            return "⚠️ GOOGLE_SHEET_ID manquant dans le fichier .env."
+
+        # Nettoyer l'ID (supprimer les guillemets parasites)
+        sheet_id = sheet_id.strip("'\" ")
 
         try:
             # Extraire une idée générale du diagnostic (les 500 premiers caractères)
@@ -253,7 +263,7 @@ class ProspectsCog(commands.Cog):
             date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Ouvrir le fichier global
-            doc = self.bot.gc.open_by_key(self.bot.GOOGLE_SHEET_ID)
+            doc = gc.open_by_key(sheet_id)
             
             # Essayer d'ouvrir l'onglet "Prospection", sinon le créer
             import gspread
@@ -263,13 +273,15 @@ class ProspectsCog(commands.Cog):
                 sheet = doc.add_worksheet(title="Prospection", rows="1000", cols="10")
                 # Ajouter les en-têtes si c'est la première fois
                 sheet.append_row(["Date", "URL", "Diagnostic", "Approche", "Statut"])
+                print("📋 Onglet 'Prospection' créé dans Google Sheets !")
 
             # Ajouter la ligne: [Date, URL, Diagnostic, Approche, Statut]
             row = [date_str, url, diagnostic, approche, "À contacter"]
             sheet.append_row(row)
-            print(f"✅ Prospect {url} sauvegardé dans l'onglet 'Prospection' avec succès !")
+            return f"✅ Prospect sauvegardé dans l'onglet **Prospection** du CRM !"
         except Exception as e:
-            print(f"⚠️ Impossible de sauvegarder le prospect dans Google Sheets : {e}")
+            print(f"⚠️ Erreur Google Sheets : {e}")
+            return f"⚠️ Erreur lors de la sauvegarde CRM : {e}"
 
     @app_commands.command(
         name="prospect_manuel",
