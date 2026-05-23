@@ -452,7 +452,7 @@ async def gemini_generate(prompt_or_contents, system_instruction: str = None, is
         try:
             config = types.GenerateContentConfig(
                 temperature=0.7, 
-                max_output_tokens=1000
+                max_output_tokens=4000
             )
             if system_instruction:
                 config.system_instruction = system_instruction
