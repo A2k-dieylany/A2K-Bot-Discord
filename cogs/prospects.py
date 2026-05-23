@@ -235,14 +235,14 @@ class ProspectsCog(commands.Cog):
                     await interaction.channel.send(part)
 
             # --- Étape 3 : Sauvegarde dans le CRM Google Sheets ---
-            crm_result = await self._save_prospect_to_sheets(url, analysis, email_msg or linkedin_msg)
+            crm_result = await self._save_prospect_to_sheets(url, analysis, linkedin_msg, email_msg)
             if crm_result:
                 await interaction.channel.send(f"📊 {crm_result}")
 
         except Exception as e:
             await interaction.followup.send(f"❌ Erreur lors de l'analyse IA : {e}")
 
-    async def _save_prospect_to_sheets(self, url: str, analysis: str, approche: str) -> str:
+    async def _save_prospect_to_sheets(self, url: str, analysis: str, linkedin_msg: str, email_msg: str) -> str:
         """Ajoute une nouvelle ligne dans le Google Sheet configuré. Retourne un message de statut."""
         gc = getattr(self.bot, 'gc', None)
         sheet_id = getattr(self.bot, 'GOOGLE_SHEET_ID', None)
@@ -256,31 +256,27 @@ class ProspectsCog(commands.Cog):
         sheet_id = sheet_id.strip("'\" ")
 
         try:
-            # Extraire une idée générale du diagnostic (les 500 premiers caractères)
-            diagnostic = analysis[:500] + "..." if len(analysis) > 500 else analysis
-            
-            # Formater la date
             date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Ouvrir le fichier global
             doc = gc.open_by_key(sheet_id)
             
-            # Essayer d'ouvrir l'onglet "Prospection", sinon le créer
             import gspread
             try:
                 sheet = doc.worksheet("Prospection")
             except gspread.exceptions.WorksheetNotFound:
-                sheet = doc.add_worksheet(title="Prospection", rows="1000", cols="10")
-                # Ajouter les en-têtes si c'est la première fois
-                sheet.append_row(["Date", "URL", "Diagnostic", "Approche", "Statut"])
-                print("📋 Onglet 'Prospection' créé dans Google Sheets !")
+                sheet = doc.add_worksheet(title="Prospection", rows=1000, cols=10)
+                sheet.append_row(["Date", "URL", "Analyse Complète", "Message LinkedIn", "Message Email", "Statut"])
+                print("Onglet 'Prospection' cree dans Google Sheets !")
 
-            # Ajouter la ligne: [Date, URL, Diagnostic, Approche, Statut]
-            row = [date_str, url, diagnostic, approche, "À contacter"]
+            # Nettoyer les textes "non trouvé" pour ne pas polluer le CRM
+            clean_linkedin = "" if "non trouvée" in linkedin_msg else linkedin_msg
+            clean_email = "" if "non trouvée" in email_msg else email_msg
+
+            row = [date_str, url, analysis, clean_linkedin, clean_email, "À contacter"]
             sheet.append_row(row)
             return f"✅ Prospect sauvegardé dans l'onglet **Prospection** du CRM !"
         except Exception as e:
-            print(f"⚠️ Erreur Google Sheets : {e}")
+            print(f"Erreur Google Sheets : {e}")
             return f"⚠️ Erreur lors de la sauvegarde CRM : {e}"
 
     @app_commands.command(
