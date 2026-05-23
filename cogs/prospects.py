@@ -453,8 +453,54 @@ class ProspectsCog(commands.Cog):
                     prefix = "## 🛡 Rapport d'Audit Complet\n\n" if i == 0 else ""
                     await interaction.channel.send(f"{prefix}{part}")
 
+            # --- Étape 4 : Sauvegarde dans le CRM Google Sheets ---
+            crm_result = await self._save_audit_to_sheets(url, report, analysis, passed)
+            if crm_result:
+                await interaction.channel.send(f"📊 {crm_result}")
+
         except Exception as e:
             await interaction.channel.send(f"❌ Erreur lors de l'analyse IA : {e}")
+
+    async def _save_audit_to_sheets(self, url: str, report: dict, analysis: str, score: int) -> str:
+        """Ajoute une nouvelle ligne dans l'onglet 'Audit Technique' du Google Sheet."""
+        gc = getattr(self.bot, 'gc', None)
+        sheet_id = getattr(self.bot, 'GOOGLE_SHEET_ID', None)
+
+        if not gc:
+            return "⚠️ Google Sheets non connecté (google_credentials.json manquant)."
+        if not sheet_id or sheet_id.strip("'\" ") == "":
+            return "⚠️ GOOGLE_SHEET_ID manquant dans le fichier .env."
+
+        sheet_id = sheet_id.strip("'\" ")
+
+        try:
+            date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            doc = gc.open_by_key(sheet_id)
+            
+            import gspread
+            try:
+                sheet = doc.worksheet("Audit Technique")
+            except gspread.exceptions.WorksheetNotFound:
+                sheet = doc.add_worksheet(title="Audit Technique", rows=1000, cols=10)
+                sheet.append_row(["Date", "URL", "Score /10", "Temps Rép. (ms)", "Taille (KB)", "Technologies", "Analyse IA"])
+                print("📋 Onglet 'Audit Technique' créé dans Google Sheets !")
+
+            tech_str = ", ".join(report["technologies_detected"]) if report["technologies_detected"] else "Aucune"
+            
+            row = [
+                date_str, 
+                url, 
+                f"{score}/10",
+                str(report['response_time_ms']),
+                str(report['page_size_kb']),
+                tech_str, 
+                analysis
+            ]
+            sheet.append_row(row)
+            return f"✅ Audit sauvegardé dans l'onglet **Audit Technique** du CRM !"
+        except Exception as e:
+            print(f"⚠️ Erreur Google Sheets Audit : {e}")
+            return f"⚠️ Erreur lors de la sauvegarde CRM : {e}"
 
 
 # ══════════════════════════════════════════════════════════════
