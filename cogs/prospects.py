@@ -47,6 +47,8 @@ def get_prospect_analysis_prompt(site_text: str, url: str) -> str:
         f"Objet percutant + corps du mail. Ton : expert, pas vendeur. Max 150 mots.\n\n"
         f"### Script d'Appel Téléphonique (30 secondes)\n"
         f"Un script naturel et conversationnel pour un premier appel.\n\n"
+        f"### WhatsApp (Message de prospection)\n"
+        f"Un message WhatsApp court, chaleureux, avec des emojis. Invite à un échange rapide.\n\n"
         f"⚠️ IMPORTANT : Sois spécifique au prospect. INTERDIT de rester générique. "
         f"Chaque message doit contenir des références concrètes à leur activité."
     )
@@ -131,6 +133,42 @@ async def scrape_website(url: str) -> str:
 #  VIEWS INTERACTIVES
 # ══════════════════════════════════════════════════════════════
 
+class WhatsAppProspectModal(discord.ui.Modal, title="Envoyer le message WhatsApp"):
+    phone_input = discord.ui.TextInput(
+        label="Numéro WhatsApp du prospect",
+        placeholder="ex: 221770000000 (avec indicatif pays)",
+        required=True,
+        min_length=8,
+        max_length=20
+    )
+
+    def __init__(self, wa_msg: str):
+        super().__init__()
+        self.wa_msg = wa_msg
+
+    async def on_submit(self, interaction: discord.Interaction):
+        phone = self.phone_input.value.strip()
+        # Nettoyage basique (retirer le '+' éventuel et les espaces)
+        phone = phone.replace("+", "").replace(" ", "")
+        
+        await interaction.response.defer(ephemeral=True)
+        try:
+            bot = interaction.client
+            if not hasattr(bot, 'send_whatsapp'):
+                await interaction.followup.send("❌ Fonctionnalité WhatsApp non connectée au bot.", ephemeral=True)
+                return
+                
+            msg = self.wa_msg
+            if "non trouvée" in msg.lower():
+                await interaction.followup.send("❌ Aucun script WhatsApp généré par l'IA à envoyer.", ephemeral=True)
+                return
+                
+            await bot.send_whatsapp(phone, msg)
+            await interaction.followup.send(f"✅ **Message envoyé avec succès** au `{phone}` via WhatsApp Business API !", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erreur lors de l'envoi WhatsApp : {e}", ephemeral=True)
+
+
 class ProspectApprovalView(discord.ui.View):
     """Boutons pour envoyer directement le message d'approche via WhatsApp."""
     def __init__(self, user_id: int, linkedin_msg: str, email_msg: str, wa_msg: str = None):
@@ -139,6 +177,22 @@ class ProspectApprovalView(discord.ui.View):
         self.linkedin_msg = linkedin_msg
         self.email_msg = email_msg
         self.wa_msg = wa_msg
+
+    @discord.ui.button(label="💬 Envoyer WhatsApp", style=discord.ButtonStyle.success)
+    async def btn_whatsapp(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Tu n'es pas l'auteur.", ephemeral=True)
+            return
+        
+        if not self.wa_msg or "non trouvée" in self.wa_msg.lower():
+            await interaction.response.send_message(
+                "❌ L'IA n'a pas pu générer le message WhatsApp. Essaie de regénérer la fiche.", 
+                ephemeral=True
+            )
+            return
+            
+        modal = WhatsAppProspectModal(self.wa_msg)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="📋 Copier LinkedIn", style=discord.ButtonStyle.primary)
     async def btn_linkedin(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -210,6 +264,7 @@ class ProspectsCog(commands.Cog):
             # Extraire les messages d'approche pour les boutons
             linkedin_msg = self._extract_section(analysis, "LinkedIn")
             email_msg = self._extract_section(analysis, "Email")
+            wa_msg = self._extract_section(analysis, "WhatsApp")
 
             # Construire l'embed
             embed = discord.Embed(
@@ -222,7 +277,8 @@ class ProspectsCog(commands.Cog):
             view = ProspectApprovalView(
                 interaction.user.id,
                 linkedin_msg,
-                email_msg
+                email_msg,
+                wa_msg
             )
 
             await interaction.followup.send(embed=embed, view=view)
